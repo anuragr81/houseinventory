@@ -103,12 +103,6 @@
 
 <div class="body" id="main-form">
 
-  <!-- Who is updating -->
-  <div class="field">
-    <span class="label">Your name</span>
-    <input class="input" id="who-input" type="text" placeholder="e.g. Anurag" autocomplete="name"/>
-  </div>
-
   <!-- Box label -->
   <div class="field">
     <span class="label">Box label</span>
@@ -219,7 +213,7 @@ let LOC_DATA = [];   // from API
 let CAT_DATA = [];   // from API
 
 let S = {
-  who: '', box: '', location_id: null,
+  who: {{ username|tojson }}, box: '', location_id: null,
   room: '', furn: '', shelf: '',
   super_id: null, super_name: '', mid_id: null, mid_name: '',
   cat_id: null, cat_name: '',
@@ -243,13 +237,6 @@ async function loadData() {
     console.error('Failed to load hierarchy data:', e);
   }
 }
-
-// ── Who field ─────────────────────────────────────────────────────────────────
-
-document.getElementById('who-input').addEventListener('input', e => {
-  S.who = e.target.value.trim();
-  checkReady();
-});
 
 // ── Box label + autocomplete ──────────────────────────────────────────────────
 
@@ -438,7 +425,7 @@ function show(id) { document.getElementById(id).style.display = 'block'; }
 function hide(id) { document.getElementById(id).style.display = 'none'; }
 
 function checkReady() {
-  const ready = S.who && S.box && S.location_id && S.cat_id;
+  const ready = S.box && S.location_id && S.cat_id;
   const btn = document.getElementById('save-btn');
   btn.className = ready ? 'save-btn on' : 'save-btn off';
   btn.disabled  = !ready;
@@ -543,7 +530,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
 // ── Reset ─────────────────────────────────────────────────────────────────────
 
 document.getElementById('reset-btn').addEventListener('click', () => {
-  S = { who: document.getElementById('who-input').value.trim(), box: '', location_id: null, room: '', furn: '', shelf: '', super_id: null, super_name: '', mid_id: null, mid_name: '', cat_id: null, cat_name: '', wall: null, i: null, j: null, notes: '', isExisting: false };
+  S = { who: S.who, box: '', location_id: null, room: '', furn: '', shelf: '', super_id: null, super_name: '', mid_id: null, mid_name: '', cat_id: null, cat_name: '', wall: null, i: null, j: null, notes: '', isExisting: false };
   boxInput.value = '';
   document.getElementById('notes-input').value = '';
   suggestions.style.display = 'none';

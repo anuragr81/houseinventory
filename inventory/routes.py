@@ -7,7 +7,7 @@ returns JSON or renders a template. No SQL here.
 """
 
 from flask import request, jsonify, render_template, current_app
-from flask_login import login_required
+from flask_login import login_required, current_user
 from inventory import inventory_bp
 from inventory.db import get_db, close_db, init_db, seed_db, init_db_command
 from inventory import models
@@ -38,7 +38,7 @@ def find_page():
 @inventory_bp.route('/update')
 @login_required
 def update_page():
-    return render_template('inventory/update.html')
+    return render_template('inventory/update.html', username=current_user.username)
 
 
 # ── API: search ───────────────────────────────────────────────────────────────
