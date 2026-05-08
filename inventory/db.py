@@ -46,11 +46,12 @@ def close_db(e=None):
 
 
 def init_db():
-    """Create all tables from schema.sql. Safe to re-run (IF NOT EXISTS)."""
+    """Create all tables from schema.sql and schema_auth.sql. Safe to re-run (IF NOT EXISTS)."""
     db = get_db()
-    schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
-    with open(schema_path, 'r') as f:
-        db.executescript(f.read())
+    for fname in ('schema.sql', 'schema_auth.sql'):
+        schema_path = os.path.join(os.path.dirname(__file__), fname)
+        with open(schema_path, 'r') as f:
+            db.executescript(f.read())
     db.commit()
 
 

@@ -7,6 +7,7 @@ returns JSON or renders a template. No SQL here.
 """
 
 from flask import request, jsonify, render_template, current_app
+from flask_login import login_required
 from inventory import inventory_bp
 from inventory.db import get_db, close_db, init_db, seed_db, init_db_command
 from inventory import models
@@ -29,11 +30,13 @@ def register_cli(state):
 # ── Page routes ───────────────────────────────────────────────────────────────
 
 @inventory_bp.route('/find')
+@login_required
 def find_page():
     return render_template('inventory/find.html')
 
 
 @inventory_bp.route('/update')
+@login_required
 def update_page():
     return render_template('inventory/update.html')
 
@@ -41,6 +44,7 @@ def update_page():
 # ── API: search ───────────────────────────────────────────────────────────────
 
 @inventory_bp.route('/api/search')
+@login_required
 def api_search():
     """GET /inventory/api/search?q=chickpeas"""
     q = request.args.get('q', '').strip()
@@ -52,6 +56,7 @@ def api_search():
 # ── API: location hierarchy ───────────────────────────────────────────────────
 
 @inventory_bp.route('/api/locations')
+@login_required
 def api_locations():
     """GET /inventory/api/locations"""
     return jsonify(models.get_location_hierarchy(get_db()))
@@ -60,6 +65,7 @@ def api_locations():
 # ── API: category hierarchy ───────────────────────────────────────────────────
 
 @inventory_bp.route('/api/categories')
+@login_required
 def api_categories():
     """GET /inventory/api/categories"""
     return jsonify(models.get_category_hierarchy(get_db()))
@@ -68,6 +74,7 @@ def api_categories():
 # ── API: boxes at a location ──────────────────────────────────────────────────
 
 @inventory_bp.route('/api/location/<int:location_id>/boxes')
+@login_required
 def api_location_boxes(location_id):
     """GET /inventory/api/location/<id>/boxes"""
     db  = get_db()
@@ -80,6 +87,7 @@ def api_location_boxes(location_id):
 # ── API: boxes by category ────────────────────────────────────────────────────
 
 @inventory_bp.route('/api/category/<int:category_id>/boxes')
+@login_required
 def api_category_boxes(category_id):
     """GET /inventory/api/category/<id>/boxes"""
     db  = get_db()
@@ -92,6 +100,7 @@ def api_category_boxes(category_id):
 # ── API: autocomplete ─────────────────────────────────────────────────────────
 
 @inventory_bp.route('/api/autocomplete')
+@login_required
 def api_autocomplete():
     """GET /inventory/api/autocomplete?q=chick"""
     q = request.args.get('q', '').strip()
@@ -103,6 +112,7 @@ def api_autocomplete():
 # ── API: get single box ───────────────────────────────────────────────────────
 
 @inventory_bp.route('/api/box/<int:box_id>', methods=['GET'])
+@login_required
 def api_get_box(box_id):
     """GET /inventory/api/box/<id>"""
     box = models.get_box_by_id(get_db(), box_id)
@@ -114,6 +124,7 @@ def api_get_box(box_id):
 # ── API: save box (create or update) ─────────────────────────────────────────
 
 @inventory_bp.route('/api/box', methods=['POST'])
+@login_required
 def api_save_box():
     """
     POST /inventory/api/box
@@ -161,6 +172,7 @@ def api_save_box():
 # ── API: soft delete box ──────────────────────────────────────────────────────
 
 @inventory_bp.route('/api/box/<int:box_id>', methods=['DELETE'])
+@login_required
 def api_delete_box(box_id):
     """
     DELETE /inventory/api/box/<id>
@@ -178,6 +190,7 @@ def api_delete_box(box_id):
 # ── API: add category to box ──────────────────────────────────────────────────
 
 @inventory_bp.route('/api/box/<int:box_id>/item', methods=['POST'])
+@login_required
 def api_add_box_item(box_id):
     """
     POST /inventory/api/box/<id>/item
@@ -222,6 +235,7 @@ def api_add_box_item(box_id):
 # ── API: remove category from box ────────────────────────────────────────────
 
 @inventory_bp.route('/api/box/<int:box_id>/item/<int:item_id>', methods=['DELETE'])
+@login_required
 def api_remove_box_item(box_id, item_id):
     """
     DELETE /inventory/api/box/<id>/item/<item_id>
