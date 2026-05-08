@@ -5,12 +5,21 @@ Standalone Flask app for the home inventory system.
 No Sanskrit dependencies — runs completely independently.
 
 Setup:
+Dependencies can be taken care of with pip install -r requirements.txt
+
+Otherwise do the following
     pip install flask flask-cors python-dotenv
-    flask init-inventory-db
-    flask run --debug
+  
+After pip install, run the following:
+
+flask init-inventory-db
+flask run --debug
 
 Or with host exposed to home network:
     flask run --debug --host=0.0.0.0
+
+Then visit:  http://127.0.0.1:5000
+
 """
 
 import sys
