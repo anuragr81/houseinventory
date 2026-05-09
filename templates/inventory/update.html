@@ -211,6 +211,7 @@ const BASE = '';   // e.g. 'https://anuragr81.pythonanywhere.com' if needed
 
 let LOC_DATA = [];   // from API
 let CAT_DATA = [];   // from API
+let boxConfirmed = false;
 
 let S = {
   who: {{ username|tojson }}, box: '', location_id: null,
@@ -244,10 +245,16 @@ const boxInput    = document.getElementById('box-input');
 const suggestions = document.getElementById('suggestions');
 
 boxInput.addEventListener('input', async () => {
+  if (boxConfirmed) {
+    boxConfirmed = false;
+    S.location_id = null; S.cat_id = null;
+    ['loc-field','cat-field','coord-field','notes-field'].forEach(id => hide(id));
+    ['step-furn','step-shelf','step-mid','step-cat'].forEach(id => hide(id));
+  }
   S.box = boxInput.value.trim();
-  if (!S.box) { suggestions.style.display = 'none'; return; }
+  if (!S.box) { suggestions.style.display = 'none'; checkReady(); return; }
   await renderSuggestions(S.box);
-  checkReady();
+  if (!boxConfirmed) checkReady();
 });
 
 async function renderSuggestions(q) {
@@ -277,19 +284,23 @@ async function renderSuggestions(q) {
 }
 
 function selectExisting(b) {
+  boxConfirmed    = true;
   boxInput.value  = b.label;
   S.box           = b.label;
   S.isExisting    = true;
   suggestions.style.display = 'none';
   showPickers();
+  checkReady();
 }
 
 function selectNew(q) {
+  boxConfirmed   = true;
   boxInput.value = q;
   S.box          = q;
   S.isExisting   = false;
   suggestions.style.display = 'none';
   showPickers();
+  checkReady();
 }
 
 function showPickers() {
@@ -530,6 +541,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
 // ── Reset ─────────────────────────────────────────────────────────────────────
 
 document.getElementById('reset-btn').addEventListener('click', () => {
+  boxConfirmed = false;
   S = { who: S.who, box: '', location_id: null, room: '', furn: '', shelf: '', super_id: null, super_name: '', mid_id: null, mid_name: '', cat_id: null, cat_name: '', wall: null, i: null, j: null, notes: '', isExisting: false };
   boxInput.value = '';
   document.getElementById('notes-input').value = '';
