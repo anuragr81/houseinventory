@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<house xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="house.xsd">
+
+  <room code="KIT" name="Kitchen">
+    <furniture code="KIT-C1" name="Cupboard Top Left">
+      <shelf code="KIT-C1-S1" name="Top shelf"/>
+      <shelf code="KIT-C1-S2" name="Middle shelf"/>
+      <shelf code="KIT-C1-S3" name="Bottom shelf"/>
+    </furniture>
+    <furniture code="KIT-C2" name="Cupboard Top Right">
+      <shelf code="KIT-C2-S1" name="Top shelf"/>
+      <shelf code="KIT-C2-S2" name="Middle shelf"/>
+      <shelf code="KIT-C2-S3" name="Bottom shelf"/>
+    </furniture>
+    <furniture code="KIT-C3" name="Cupboard Bottom Left">
+      <shelf code="KIT-C3-S1" name="Top shelf"/>
+      <shelf code="KIT-C3-S2" name="Bottom shelf"/>
+    </furniture>
+    <furniture code="KIT-C4" name="Cupboard Bottom Right">
+      <shelf code="KIT-C4-S1" name="Top shelf"/>
+      <shelf code="KIT-C4-S2" name="Bottom shelf"/>
+    </furniture>
+
+  </room>
+
+  <room code="STU" name="Study">
+    <furniture code="STU-BS1" name="Bookshelf 1">
+      <shelf code="STU-BS1-S1" name="Top shelf"/>
+      <shelf code="STU-BS1-S2" name="Middle shelf"/>
+      <shelf code="STU-BS1-S3" name="Bottom shelf"/>
+    </furniture>
+    <furniture code="STU-DD" name="Desk drawers">
+      <shelf code = "STU-DD-R1" name="Top Row" />
+      <shelf code = "STU-DD-R2" name ="Middle Row" />
+      <shelf code = "STU-DD-R3" name ="Bottom Row" />
+    </furniture>
+  </room>
+  <room code="STAIRS" name="Staircase">
+    <furniture code="STR-SHELF-1" name="Under Stairs">
+          <shelf code="STR-SLF1-R1" name="Front Row"/>
+    <shelf code="STR-SLF1-R2" name="Middle Row"/>
+    <shelf code="STR-SLF1-R3" name="Far Row"/>
+    </furniture>
+    <furniture code="STR-SHELF-2" name="Beside Stairs">
+          <shelf code="STR-SLF2-R1" name="Top Row"/>
+    <shelf code="STR-SLF2-R2" name="Middle Row"/>
+    <shelf code="STR-SLF2-R3" name="Bottom Row"/>
+    </furniture>
+
+  </room>
+
+  <room code="BED" name="Bedroom"/>
+
+  <room code="GAR" name="Garage">
+    <furniture code="GAR-SH" name="Shelving unit">
+      <shelf code="GAR-SH-S1" name="Shelf 1"/>
+    </furniture>
+  </room>
+
+</house>

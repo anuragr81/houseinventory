@@ -32,6 +32,7 @@ def _base():
 
 def _make_connection():
     """Create and fully initialise one in-memory SQLite connection."""
+    from inventory.db import seed_locations_from_xml
     conn = sqlite3.connect(':memory:', check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -39,6 +40,7 @@ def _make_connection():
         conn.executescript(f.read())
     with open(os.path.join(_base(), 'seed.sql')) as f:
         conn.executescript(f.read())
+    seed_locations_from_xml(db=conn)
     return conn
 
 
@@ -67,17 +69,20 @@ def conn():
 def app(conn):
     """Flask test app wired to the persistent test connection."""
     from inventory import inventory_bp
+    from inventory.auth import login_manager
 
     _app = Flask(
         __name__,
         template_folder=os.path.join(_base(), 'templates')
     )
     _app.config.update({
-        'TESTING':    True,
-        'DATABASE':   ':memory:',
-        'SECRET_KEY': 'test',
+        'TESTING':        True,
+        'DATABASE':       ':memory:',
+        'SECRET_KEY':     'test',
+        'LOGIN_DISABLED': True,
     })
     _app.register_blueprint(inventory_bp)
+    login_manager.init_app(_app)
     _patch_get_db(conn)
     return _app
 

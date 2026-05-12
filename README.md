@@ -10,14 +10,16 @@ inventory_app/
 ├── requirements.txt
 ├── .flaskenv                 ← local dev config
 ├── .gitignore
-├── manage_locations.py       ← define your house layout (run once)
 ├── inventory/
 │   ├── __init__.py           ← Blueprint definition
-│   ├── db.py                 ← database connection
+│   ├── db.py                 ← database connection + XML loader
 │   ├── models.py             ← query functions
 │   ├── routes.py             ← Flask routes
 │   ├── schema.sql            ← table definitions
 │   ├── seed.sql              ← category hierarchy
+│   ├── config/
+│   │   ├── house.xml         ← your house layout (edit this)
+│   │   └── house.xsd         ← schema that validates house.xml
 │   └── templates/inventory/
 │       ├── find.html         ← retriever UI
 │       └── update.html       ← updater UI
@@ -29,14 +31,46 @@ inventory_app/
     └── test_coordinates.py
 ```
 
+## Defining your house layout
+
+Edit `inventory/config/house.xml` to describe your rooms, furniture, and shelves before running `flask init-inventory-db`. The hierarchy is three levels deep:
+
+```xml
+<house>
+  <room code="LIV" name="Living room">
+    <furniture code="LIV-CB" name="Cupboard">
+      <shelf code="LIV-CB-S1" name="Top shelf"/>
+      <shelf code="LIV-CB-S2" name="Bottom shelf"/>
+    </furniture>
+  </room>
+  <room code="GAR" name="Garage"/>   <!-- room with no furniture is fine -->
+</house>
+```
+
+Rules enforced by `house.xsd`:
+- Every `room`, `furniture`, and `shelf` element must have a `code` and a `name` attribute.
+- Codes must be unique across the entire file.
+- Nesting must follow `room → furniture → shelf` exactly (no deeper).
+
+`flask init-inventory-db` validates the XML against the schema before writing anything to the database, so a malformed file will produce a clear error rather than bad data.
+
 ## Setup
 
 ```bash
 pip install -r requirements.txt
+# Edit inventory/config/house.xml to match your actual house, then:
 flask init-inventory-db
-python manage_locations.py    # define your house layout first
+flask create-user <username>    # prompts for a password
 flask run --debug
 ```
+
+Alternatively you can launch the app directly with Python:
+
+```bash
+python flask_app.py
+```
+
+Both methods start the server at `http://127.0.0.1:5000`. `flask run` is preferred for development because it supports auto-reload on code changes (`--debug` flag); `python flask_app.py` is handy if you don't want to set the `FLASK_APP` environment variable.
 
 ## Access
 

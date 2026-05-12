@@ -24,7 +24,7 @@ class TestSearchRoute:
     def test_search_returns_location_path(self, client):
         data = client.get('/inventory/api/search?q=chickpeas').get_json()
         assert 'Kitchen' in data[0]['location']
-        assert 'Cupboard 2' in data[0]['location']
+        assert 'Cupboard Top Right' in data[0]['location']
 
     def test_search_returns_categories(self, client):
         data = client.get('/inventory/api/search?q=chickpeas').get_json()
@@ -66,7 +66,7 @@ class TestLocationsRoute:
     def test_furniture_has_shelves(self, client):
         data    = client.get('/inventory/api/locations').get_json()
         kitchen = next(r for r in data if r['name'] == 'Kitchen')
-        c2      = next(f for f in kitchen['furniture'] if f['name'] == 'Cupboard 2')
+        c2      = next(f for f in kitchen['furniture'] if f['name'] == 'Cupboard Top Right')
         assert len(c2['shelves']) > 0
 
 

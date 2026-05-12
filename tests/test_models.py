@@ -15,7 +15,7 @@ class TestLocationPath:
     def test_full_path_three_levels(self, db):
         loc_id = get_location_id(db, 'KIT-C2-S2')
         path   = models.location_path(db, loc_id)
-        assert path == 'Kitchen > Cupboard 2 > Middle shelf'
+        assert path == 'Kitchen > Cupboard Top Right > Middle shelf'
 
     def test_room_only_path(self, db):
         loc_id = get_location_id(db, 'KIT')
@@ -39,13 +39,13 @@ class TestLocationHierarchy:
         hierarchy = models.get_location_hierarchy(db)
         kitchen   = next(r for r in hierarchy if r['name'] == 'Kitchen')
         furn_names = [f['name'] for f in kitchen['furniture']]
-        assert 'Cupboard 1' in furn_names
-        assert 'Cupboard 2' in furn_names
+        assert 'Cupboard Top Left' in furn_names
+        assert 'Cupboard Top Right' in furn_names
 
     def test_furniture_has_shelves(self, db):
         hierarchy = models.get_location_hierarchy(db)
         kitchen   = next(r for r in hierarchy if r['name'] == 'Kitchen')
-        c2        = next(f for f in kitchen['furniture'] if f['name'] == 'Cupboard 2')
+        c2        = next(f for f in kitchen['furniture'] if f['name'] == 'Cupboard Top Right')
         shelf_names = [s['name'] for s in c2['shelves']]
         assert 'Middle shelf' in shelf_names
 
@@ -124,7 +124,7 @@ class TestSaveBox:
         action, box = models.save_box(db, 'New spices box', loc_id, 'cumin, turmeric', 'Anurag')
         assert action == 'created'
         assert box['label'] == 'New spices box'
-        assert box['location'] == 'Kitchen > Cupboard 1 > Middle shelf'
+        assert box['location'] == 'Kitchen > Cupboard Top Left > Middle shelf'
 
     def test_update_existing_box_location(self, db):
         new_loc_id = get_location_id(db, 'KIT-C1-S3')
