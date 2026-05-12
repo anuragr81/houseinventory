@@ -89,6 +89,16 @@ flask run --debug --host=0.0.0.0
 Then visit `http://<your-pc-ip>:5000` from any device on your network.
 Find your PC's IP with `ipconfig` (Windows) or `ifconfig` (Mac/Linux).
 
+## Clearing the inventory
+
+To wipe all boxes, items, and locations, then reload locations fresh from `house.xml`:
+
+```bash
+flask clear-inventory
+```
+
+You will be prompted to confirm before anything is deleted. Users are preserved — you do not need to run `flask create-user` again unless you also deleted `inventory.db` manually.
+
 ## Tests
 
 ```bash

@@ -142,15 +142,38 @@ def init_db_command():
 
 
 @click.command('clear-inventory')
-@click.confirmation_option(prompt='This will delete ALL boxes and items. Continue?')
 def clear_inventory_command():
-    """Flask CLI command: flask clear-inventory — wipes boxes/items, keeps locations/categories/users."""
+    """Flask CLI command: flask clear-inventory — wipes boxes/items/locations, reseeds from XML, keeps users."""
+    tables_to_clear = [
+        ('box_item_log',  'audit log entries'),
+        ('box_item',      'box–category assignments'),
+        ('box',           'boxes'),
+        ('location',      'rooms, furniture, and shelves'),
+        ('category',      'item categories'),
+        ('mid_category',  'mid-level categories'),
+        ('super_category','top-level categories'),
+    ]
+
+    click.echo('The following tables will have all rows deleted and be reseeded:')
+    for table, description in tables_to_clear:
+        click.echo(f'  {table:<20} ({description})')
+    click.echo('The user table is NOT affected.')
+    click.echo()
+
+    if not click.confirm('Continue?'):
+        click.echo('Aborted.')
+        return
+
     db = get_db()
-    db.execute("DELETE FROM box_item_log")
-    db.execute("DELETE FROM box_item")
-    db.execute("DELETE FROM box")
-    # Reset auto-increment counters so IDs restart from 1
-    for table in ('box_item_log', 'box_item', 'box'):
+
+    db.execute("PRAGMA foreign_keys = OFF")
+    for table, _ in tables_to_clear:
+        db.execute(f"DELETE FROM {table}")  # noqa: S608 — table names are hardcoded, not user input
+    for table, _ in tables_to_clear:
         db.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,))
+    db.execute("PRAGMA foreign_keys = ON")
     db.commit()
-    click.echo('Inventory cleared: all boxes and items deleted.')
+
+    seed_db()
+
+    click.echo('Inventory cleared and reseeded. Run "flask create-user <username>" if you need to add users.')
