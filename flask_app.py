@@ -53,6 +53,16 @@ app.register_blueprint(inventory_bp)      # /inventory/...
 app.cli.add_command(init_db_command)
 app.cli.add_command(create_user_command)
 
+# ── PWA service worker (must be served from root path for correct scope) ─────
+
+@app.route('/service-worker.js')
+def service_worker():
+    return app.send_static_file('service-worker.js'), 200, {
+        'Content-Type': 'application/javascript',
+        'Service-Worker-Allowed': '/',
+    }
+
+
 # ── Root ──────────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -87,6 +97,11 @@ def index():
       <a class="update" href="/inventory/update">Store a box</a>
       <a class="logout" href="/logout">Sign out</a>
     </body>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js');
+      }
+    </script>
     </html>
     '''
 
