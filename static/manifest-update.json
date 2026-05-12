@@ -1,0 +1,12 @@
+{
+  "name": "Home Inventory — Store",
+  "short_name": "Store Box",
+  "start_url": "/inventory/update",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1D9E75",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

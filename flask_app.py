@@ -63,6 +63,10 @@ def index():
     <head>
       <title>Home Inventory</title>
       <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <meta name="theme-color" content="#378ADD"/>
+      <meta name="apple-mobile-web-app-capable" content="yes"/>
+      <meta name="apple-mobile-web-app-title" content="Inventory"/>
+      <link rel="manifest" href="/static/manifest.json"/>
       <style>
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: -apple-system, sans-serif; max-width: 400px;
