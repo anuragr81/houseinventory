@@ -70,3 +70,18 @@ def init_db_command():
     init_db()
     seed_db()
     click.echo('Inventory database initialised and seeded.')
+
+
+@click.command('clear-inventory')
+@click.confirmation_option(prompt='This will delete ALL boxes and items. Continue?')
+def clear_inventory_command():
+    """Flask CLI command: flask clear-inventory — wipes boxes/items, keeps locations/categories/users."""
+    db = get_db()
+    db.execute("DELETE FROM box_item_log")
+    db.execute("DELETE FROM box_item")
+    db.execute("DELETE FROM box")
+    # Reset auto-increment counters so IDs restart from 1
+    for table in ('box_item_log', 'box_item', 'box'):
+        db.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,))
+    db.commit()
+    click.echo('Inventory cleared: all boxes and items deleted.')

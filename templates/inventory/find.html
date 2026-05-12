@@ -331,9 +331,15 @@ function selRoom(chip) {
   ls = { room_id: parseInt(chip.dataset.id), furn_id: null };
   hlChip('br-rooms', chip.dataset.name);
   const room = LOC_DATA.find(r => r.id == chip.dataset.id);
-  mkChips('br-furn', room.furniture, selFurn);
-  show('br-furn-s'); hide('br-shelf-s');
+  hide('br-shelf-s');
   hide('br-loc-div'); document.getElementById('br-loc-res').innerHTML = '';
+  if (room.furniture.length === 0) {
+    hide('br-furn-s');
+    fetchLocBoxes(chip.dataset.id);
+  } else {
+    mkChips('br-furn', room.furniture, selFurn);
+    show('br-furn-s');
+  }
 }
 
 function selFurn(chip) {
@@ -341,15 +347,24 @@ function selFurn(chip) {
   hlChip('br-furn', chip.dataset.name);
   const room = LOC_DATA.find(r => r.id === ls.room_id);
   const furn = room.furniture.find(f => f.id == chip.dataset.id);
-  mkChips('br-shelf', furn.shelves, selShelf);
-  show('br-shelf-s');
   hide('br-loc-div'); document.getElementById('br-loc-res').innerHTML = '';
+  if (furn.shelves.length === 0) {
+    hide('br-shelf-s');
+    fetchLocBoxes(chip.dataset.id);
+  } else {
+    mkChips('br-shelf', furn.shelves, selShelf);
+    show('br-shelf-s');
+  }
 }
 
 async function selShelf(chip) {
   hlChip('br-shelf', chip.dataset.name);
+  fetchLocBoxes(chip.dataset.id);
+}
+
+async function fetchLocBoxes(locationId) {
   try {
-    const res  = await fetch(BASE + `/inventory/api/location/${chip.dataset.id}/boxes`);
+    const res  = await fetch(BASE + `/inventory/api/location/${locationId}/boxes`);
     const data = await res.json();
     showBrowseResults('br-loc-res', 'br-loc-div', data, 'location');
   } catch(e) { console.error(e); }

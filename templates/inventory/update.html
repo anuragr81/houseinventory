@@ -326,8 +326,13 @@ function selRoom(chip) {
   S.room = chip.dataset.name; S.furn = ''; S.shelf = ''; S.location_id = null;
   hlChip('chips-room', chip.dataset.name, 'name');
   const room = LOC_DATA.find(r => r.id == chip.dataset.id);
-  renderChips('chips-furn', room.furniture, 'name', selFurn);
-  show('step-furn'); hide('step-shelf');
+  if (room.furniture.length === 0) {
+    S.location_id = parseInt(chip.dataset.id);
+    hide('step-furn'); hide('step-shelf');
+  } else {
+    renderChips('chips-furn', room.furniture, 'name', selFurn);
+    show('step-furn'); hide('step-shelf');
+  }
   updateLocPath(); checkReady();
 }
 
@@ -336,8 +341,13 @@ function selFurn(chip) {
   hlChip('chips-furn', chip.dataset.name, 'name');
   const room = LOC_DATA.find(r => r.name === S.room);
   const furn = room.furniture.find(f => f.id == chip.dataset.id);
-  renderChips('chips-shelf', furn.shelves, 'name', selShelf);
-  show('step-shelf');
+  if (furn.shelves.length === 0) {
+    S.location_id = parseInt(chip.dataset.id);
+    hide('step-shelf');
+  } else {
+    renderChips('chips-shelf', furn.shelves, 'name', selShelf);
+    show('step-shelf');
+  }
   updateLocPath(); checkReady();
 }
 
@@ -351,7 +361,7 @@ function updateLocPath() {
   const parts = [S.room, S.furn, S.shelf].filter(Boolean);
   const el = document.getElementById('loc-path');
   el.textContent = parts.length ? parts.join(' > ') : 'Select a room to begin';
-  el.className   = parts.length === 3 ? 'path done' : 'path';
+  el.className   = S.location_id ? 'path done' : 'path';
 }
 
 // ── Category picker ───────────────────────────────────────────────────────────
@@ -521,7 +531,7 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     });
 
     // 3. Show confirmation
-    const locPath   = [S.room, S.furn, S.shelf].join(' > ');
+    const locPath   = [S.room, S.furn, S.shelf].filter(Boolean).join(' > ');
     const catPath   = [S.super_name, S.mid_name, S.cat_name].filter(Boolean).join(' > ');
     const coordStr  = (S.wall && S.i && S.j)
       ? `W${S.wall} · ${ROW_NAMES[S.i]} row · ${COL_NAMES[S.j]} column`

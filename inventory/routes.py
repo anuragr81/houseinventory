@@ -9,7 +9,7 @@ returns JSON or renders a template. No SQL here.
 from flask import request, jsonify, render_template, current_app
 from flask_login import login_required, current_user
 from inventory import inventory_bp
-from inventory.db import get_db, close_db, init_db, seed_db, init_db_command
+from inventory.db import get_db, close_db, init_db, seed_db, init_db_command, clear_inventory_command
 from inventory import models
 
 
@@ -25,6 +25,7 @@ def teardown_db(e=None):
 @inventory_bp.record_once
 def register_cli(state):
     state.app.cli.add_command(init_db_command)
+    state.app.cli.add_command(clear_inventory_command)
 
 
 # ── Page routes ───────────────────────────────────────────────────────────────
