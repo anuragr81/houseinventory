@@ -56,28 +56,50 @@ def load_app(module_name, relative_path, attr='app'):
     return getattr(module, attr)
 
 
-def load_tastefinder():
-    """Return the tastefinder FastAPI app wrapped for WSGI, or None if absent.
-
-    Returns None rather than raising so that a deployment missing the FastAPI
-    dependencies still serves houseinventory instead of failing to start.
-    """
+def tastefinder_available():
+    """Whether the tastefinder dependencies are importable, without building anything."""
     try:
-        from a2wsgi import ASGIMiddleware
+        import a2wsgi  # noqa: F401
 
-        from app.main import create_app
+        import app.main  # noqa: F401
     except ImportError:
-        return None
-    return ASGIMiddleware(create_app())
+        return False
+    return True
+
+
+class LazyASGIApp:
+    """WSGI callable that builds its ASGIMiddleware on first call, not at import time.
+
+    uWSGI here runs in preforking mode: wsgi.py is fully imported once in the
+    master process, which then fork()s the worker processes. asyncio event
+    loops (and the epoll file descriptors they hold) do not survive fork()
+    safely -- a worker that inherits an event loop built in the master can
+    hang indefinitely on any request that touches it, including completely
+    unrelated ones served by the same worker.
+
+    Deferring construction to the first request made *in* a worker avoids
+    this: each forked worker builds its own event loop after the fork, not
+    before it.
+    """
+
+    def __init__(self):
+        self._app = None
+
+    def __call__(self, environ, start_response):
+        if self._app is None:
+            from a2wsgi import ASGIMiddleware
+
+            from app.main import create_app
+            self._app = ASGIMiddleware(create_app())
+        return self._app(environ, start_response)
 
 
 # ── Mounts ────────────────────────────────────────────────────────────────────
 
 MOUNTS = {'/houseinventory': load_app('houseinventory_app', 'flask_app.py')}
 
-_tastefinder = load_tastefinder()
-if _tastefinder is not None:
-    MOUNTS['/tastefinder'] = _tastefinder
+if tastefinder_available():
+    MOUNTS['/tastefinder'] = LazyASGIApp()
 
 
 # ── Landing page ──────────────────────────────────────────────────────────────
