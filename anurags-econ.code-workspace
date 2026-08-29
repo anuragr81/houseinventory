@@ -1,0 +1,65 @@
+// VS Code multi-root workspace.
+//
+// Open this file (File > Open Workspace from File...) rather than opening the
+// repository folder directly. The two projects here have different
+// interpreters, different dependencies, and different pytest configuration;
+// opening the repo root alone makes the Python extension pick one of each and
+// apply it to both, which is how you end up running the Flask suite when you
+// meant to run the server suite.
+{
+  "folders": [
+    {
+      "name": "houseinventory",
+      "path": "."
+    },
+    {
+      "name": "tastefinder-server",
+      "path": "tastefinder/server"
+    }
+    // Phase 4: uncomment once `flutter create` has produced tastefinder/client.
+    // Add "tastefinder/client": true to files.exclude below at the same time.
+    // {
+    //   "name": "tastefinder-client",
+    //   "path": "tastefinder/client"
+    // }
+  ],
+  "settings": {
+    // tastefinder/server has its own root above, so hide it from the
+    // houseinventory tree to avoid the same files appearing twice. The pattern
+    // is relative to each folder, so it only matches under the repo root.
+    // tastefinder/docs stays visible there deliberately -- the specs are worth
+    // stumbling over.
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.egg-info": true,
+      ".mypy_cache": true,
+      ".pytest_cache": true,
+      ".ruff_cache": true,
+      "tastefinder/server": true
+    },
+    "search.exclude": {
+      "**/.venv": true,
+      "**/migrations/versions": false
+    },
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    // Interpreters are per-folder and machine-specific, so they are chosen via
+    // "Python: Select Interpreter" (which asks which folder in a multi-root
+    // workspace) and stored in each folder's .vscode/settings.json, which is
+    // gitignored. Nothing machine-specific belongs in this file.
+    "[python]": {
+      "editor.rulers": [
+        100
+      ]
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "charliermarsh.ruff",
+      "ms-python.mypy-type-checker",
+      "dart-code.flutter"
+    ]
+  }
+}

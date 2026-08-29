@@ -1,0 +1,17 @@
+# Repository-root ignores. tastefinder/ has its own .gitignore for the
+# Python/Flutter toolchains that live under it.
+
+# Editor / IDE. Interpreter selections are machine-specific and belong here,
+# not in the committed .code-workspace.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
