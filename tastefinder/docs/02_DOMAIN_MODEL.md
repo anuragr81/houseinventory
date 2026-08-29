@@ -108,7 +108,15 @@ bookkeeping. It is not a venue database and must not grow into one.
 - `cached_lat: Optional[float]`
 - `cached_lng: Optional[float]`
 - `coords_cached_at: Optional[datetime]`
-- Behaviour: `needs_refresh(now) -> bool`
+- Behaviour: `needs_refresh(now, coord_retention) -> bool`
+
+> **Signature note (Phase 2).** `needs_refresh` takes the retention window as a
+> required argument rather than reading a module constant. The cacheable window
+> is set by Google's then-current Places policy and changes; the warning under
+> `INV-CACHE-2` says to treat it as something to re-verify, not a constant.
+> Making it an argument means it cannot quietly harden into one. Absent
+> `coords_cached_at` counts as needing a refresh, so stale coordinates are never
+> served.
 
 Do **not** add columns for name, address, rating, photos, opening hours, or
 review text. See invariant `INV-CACHE-1` in `docs/04`.
@@ -122,7 +130,18 @@ review text. See invariant `INV-CACHE-1` in `docs/04`.
 - `last_updated_at: datetime`
 - `noise_epsilon: Optional[float]`
 - Behaviour: `is_above_threshold(min_cohort) -> bool`,
-  `apply_contribution(c) -> None`, `to_public_view() -> PublicAggregateView`
+  `to_public_view(bucketing) -> PublicAggregateView`
+
+> **Signature notes (Phase 2).** `apply_contribution` is **not** implemented on
+> this model. Phase 2's instruction is to keep the domain models as data and put
+> folding in `services/aggregation.py`; folding is incremental aggregation
+> across entities, so it lives there with `fold_into`/`purge` rather than being
+> split across two layers.
+>
+> `to_public_view` takes an explicit `CohortBucketing` (below). It is a
+> projection, not a privacy decision — it does not check the threshold, because
+> suppression is `PrivacyGate`'s job and `INV-EXPOSE-4` requires it on every
+> read. Callers must gate before publishing.
 
 ### `FacetStat`
 Owned by an aggregate (composition).
@@ -161,6 +180,45 @@ Governed by invariants `INV-RAW-1` and `INV-RAW-2`. Whatever persistence
 approach is chosen in Phase 2, a raw contribution must not remain readable after
 it has been folded.
 
+### RawContribution persistence — decision (Phase 2)
+
+**Chosen: an in-flight object. `RawContribution` is never persisted. There is no
+table for it, and `Base.metadata` contains none.**
+
+Phase 2 offered two options: a short-lived working row with a `folded_at` column
+and a hard deletion path, or an in-flight object. The second is stronger, and
+the reasoning is worth keeping because the first will look tempting again later:
+
+- **A working table cannot satisfy `INV-RAW-2` during its own lifetime.** Such a
+  row necessarily holds `user_id` beside `facet_scores` — precisely the shape the
+  invariant forbids. The invariant is written as "after folding", but a table
+  whose steady state is a breach relies on deletion always succeeding to stay
+  compliant, which is a weaker guarantee than never writing the row.
+- **Deletion is not erasure.** A hard `DELETE` leaves data recoverable in
+  database backups, WAL segments, and page slack. "Purged" would mean
+  "unreachable through the ORM", not "gone" — and `INV-RAW-1` is about what
+  survives, not what is convenient to query.
+- **A crash becomes a retention event.** If the process dies between capture and
+  fold, a working table keeps identified rows on disk indefinitely with no
+  actor responsible for clearing them. An in-memory object simply ceases to
+  exist.
+- **`docs/04` names this exact instinct.** "Keep raw contributions
+  'temporarily' to make aggregation easier to test" is listed under *For the
+  agent* as a direct breach. The convenience is real; that is why it is written
+  down.
+
+**What this costs, stated plainly.** A contribution that arrives and is not
+folded before the process dies is lost, with no durable queue to replay it from.
+That is an availability cost, paid deliberately, because `CLAUDE.md` makes
+transience of identified data the rule that overrides everything else. If that
+trade is ever judged wrong, the alternative is not a raw-contribution table but
+a durable *aggregate-side* write-ahead of the fold operation, which keeps the
+identified payload out of storage entirely. **That would be the project owner's
+decision to make, not an implementer's.**
+
+`folded_at` is retained on the in-memory model. It marks that folding has run so
+that Phase 3 can detect a double-fold, and it never reaches a database.
+
 ## Output type
 
 ### `PublicAggregateView`
@@ -174,6 +232,25 @@ The only shape that leaves the system.
 `cohort_size_bucket`, never `cohort_size`. Publishing exact counts across
 successive releases is what enables a differencing attack; bucketing is the
 first line of defence against it. See `INV-EXPOSE-2`.
+
+### `CohortBucketing` (added in Phase 2)
+
+Maps an exact cohort size onto a published bucket label. Added because
+`PublicAggregateView.cohort_size_bucket` needs something to produce it, and the
+bucket boundaries are a privacy parameter rather than a formatting detail.
+
+- `boundaries: tuple[int, ...]` — ascending lower bounds, must start at 0
+- Behaviour: `label(cohort_size) -> str`
+
+Example: `(0, 10, 25, 50, 100)` yields `"0-9"`, `"10-24"`, `"25-49"`, `"50-99"`,
+`"100+"`.
+
+**There is deliberately no default instance and no default boundary set.** Bucket
+width determines how much a published figure narrows an attacker's estimate of a
+cohort, so it is the same class of decision as `min_cohort_threshold` under
+`OPEN-1` and the mechanism parameters under `OPEN-3` — one for the project owner,
+recorded, not picked by an implementer because it looked reasonable. The tuple
+above is an illustration in this document, not a default in the code.
 
 ## Relationships
 
