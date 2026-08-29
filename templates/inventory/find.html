@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-title" content="Find Box"/>
   <meta name="theme-color" content="#378ADD"/>
   <title>Find a Box</title>
-  <link rel="manifest" href="/static/manifest-find.json"/>
+  <link rel="manifest" href="{{ url_for('static', filename='manifest-find.json') }}"/>
   <style>
     :root {
       --blue:        #378ADD;
@@ -209,7 +209,8 @@
 </div>
 
 <script>
-const BASE = '';
+// Mount root of the WSGI app ('' at domain root, '/houseinventory' behind a prefix).
+const BASE = '{{ request.script_root }}';
 
 let LOC_DATA = [];
 let CAT_DATA = [];

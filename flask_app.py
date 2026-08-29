@@ -21,7 +21,7 @@ import os
 # Ensure the project root is on sys.path so 'inventory' package is found
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask
+from flask import Flask, render_template_string, request
 from flask_cors import CORS
 from flask_login import login_required
 
@@ -53,13 +53,15 @@ app.register_blueprint(inventory_bp)      # /inventory/...
 app.cli.add_command(init_db_command)
 app.cli.add_command(create_user_command)
 
-# ── PWA service worker (must be served from root path for correct scope) ─────
+# ── PWA service worker ───────────────────────────────────────────────────────
+# Served from the app's mount root so its default scope covers the whole app,
+# whether that root is '/' or a WSGI prefix such as '/houseinventory'.
 
 @app.route('/service-worker.js')
 def service_worker():
     return app.send_static_file('service-worker.js'), 200, {
         'Content-Type': 'application/javascript',
-        'Service-Worker-Allowed': '/',
+        'Service-Worker-Allowed': request.script_root + '/',
     }
 
 
@@ -68,7 +70,7 @@ def service_worker():
 @app.route('/')
 @login_required
 def index():
-    return '''
+    return render_template_string('''
     <html>
     <head>
       <title>Home Inventory</title>
@@ -76,7 +78,7 @@ def index():
       <meta name="theme-color" content="#378ADD"/>
       <meta name="apple-mobile-web-app-capable" content="yes"/>
       <meta name="apple-mobile-web-app-title" content="Inventory"/>
-      <link rel="manifest" href="/static/manifest.json"/>
+      <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}"/>
       <style>
         *, *::before, *::after { box-sizing: border-box; }
         body { font-family: -apple-system, sans-serif; max-width: 400px;
@@ -93,17 +95,17 @@ def index():
     </head>
     <body>
       <h2>Home Inventory</h2>
-      <a class="find"   href="/inventory/find">Find a box</a>
-      <a class="update" href="/inventory/update">Store a box</a>
-      <a class="logout" href="/logout">Sign out</a>
+      <a class="find"   href="{{ url_for('inventory.find_page') }}">Find a box</a>
+      <a class="update" href="{{ url_for('inventory.update_page') }}">Store a box</a>
+      <a class="logout" href="{{ url_for('auth.logout') }}">Sign out</a>
     </body>
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/service-worker.js');
+        navigator.serviceWorker.register('{{ url_for('service_worker') }}');
       }
     </script>
     </html>
-    '''
+    ''')
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
