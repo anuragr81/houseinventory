@@ -1,1 +1,1 @@
-"""Placeholder package; populated in a later bootstrap phase."""
+"""Aggregation, the privacy gate, and the authorisation decisions around them."""

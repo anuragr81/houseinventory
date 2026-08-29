@@ -176,6 +176,24 @@ folded and then destroyed.
 - Behaviour (implement in `services/aggregation.py`, not on the model):
   `fold_into(target)`, `purge()`
 
+> **Signature note (Phase 3).** Implemented as
+> `StreamingAggregator.fold(contribution, aggregate, now)` and a module-level
+> `purge(contribution)`, rather than as `fold_into` on a contribution object.
+> Folding reads and writes both entities, so naming it after one of them
+> misdescribes it; the aggregator is also the seam `docs/00_BOOTSTRAP.md`
+> expects later phases to replace for batched updates (`OPEN-2`) or a different
+> statistic (`OPEN-3`).
+>
+> `fold` purges the contribution on **every** exit path, success or failure.
+> A rejected contribution therefore cannot be corrected and resubmitted from
+> the object that was passed in. That is the cost of the transience rule in
+> `CLAUDE.md`, paid deliberately: a failed fold holding identified data in
+> memory indefinitely is the thing `INV-RAW-1` exists to prevent.
+>
+> `cohort_size` counts contributions, not distinct contributors — see `OPEN-7`
+> in `docs/04_PRIVACY_INVARIANTS.md`, which is a genuine open question about the
+> suppression threshold rather than a naming detail.
+
 Governed by invariants `INV-RAW-1` and `INV-RAW-2`. Whatever persistence
 approach is chosen in Phase 2, a raw contribution must not remain readable after
 it has been folded.

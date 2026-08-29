@@ -217,6 +217,82 @@ directly with `OPEN-1`: whatever `min_cohort_threshold` is eventually set to is
 also the number of accounts an attacker needs, so the two decisions should be
 made with each other in view, not independently.
 
+### `OPEN-7` — `cohort_size` counts contributions, not contributors
+
+Surfaced while implementing the aggregator in Phase 3, and recorded here rather
+than decided.
+
+`StreamingAggregator.fold` increments `cohort_size` once per contribution. It
+does **not** de-duplicate by contributor, because it cannot: telling a repeat
+contributor from a new one requires a per-aggregate record of which users have
+already contributed, which is exactly the user-indexed structure `INV-RAW-2`
+forbids. So `cohort_size` is an upper bound on the number of distinct people
+behind a slice, not the number itself.
+
+Why this matters rather than being a naming quibble: `min_cohort_threshold` is
+a *privacy* parameter, and it is being compared against a number that a single
+person contributing repeatedly can inflate on their own. Ten contributions from
+one enthusiastic member currently reads as a cohort of ten and publishes. That
+weakens the suppression guarantee `INV-EXPOSE-4` rests on, and it overlaps with
+`OPEN-6`: an attacker needs fewer accounts than the threshold suggests.
+
+The options, none of them chosen here:
+
+- Rate-limit contributions per account and per venue, so repeat contributions
+  are bounded without being counted (`docs/03_API_CONTRACT.md` already asks for
+  this on the write path, for Sybil reasons).
+- Hold a per-aggregate cardinality sketch (e.g. HyperLogLog) over salted user
+  identifiers, which estimates distinct contributors without storing a
+  membership list. This persists a derivative of `user_id` next to rating data
+  and would need to be weighed against `INV-RAW-2` explicitly, not slipped in.
+- Accept the upper bound and set `OPEN-1`'s threshold high enough to absorb it.
+
+**This is the project owner's decision.** Whichever way it goes, it should be
+made alongside `OPEN-1` and `OPEN-6`, since all three set the same number from
+different directions.
+
+
+---
+
+## Implementation status (Phase 3)
+
+Every invariant above has at least one executable test in
+`server/tests/test_privacy_invariants.py`, and that property is itself enforced
+by `test_every_documented_invariant_has_a_test`, which parses this file for
+`INV-` headings and fails if any lacks a matching test name. Adding an
+invariant here without covering it breaks the build, by design.
+
+Several invariants constrain layers that do not exist yet — there is one route
+(`/health`) and no repository at all. Those are covered by assertions of
+absence over the mapped tables, the generated OpenAPI schema, and the `app/`
+source tree, per the "MUST NOT exist" rule at the top of this file. They are
+written to fail on the commit that introduces the breach rather than to be
+revisited when the layer arrives. The absence tests were verified by planting
+deliberate breaches — a user-indexed contribution lookup, a venue search, a
+consent delete, a `GET /contributions/{id}` route, a payload in a log line, a
+`free_text` column, a `signed_url` column, a removed threshold check, and an
+age check defaulting open — and confirming each was caught.
+
+### Modules beyond the Phase 3 instruction
+
+`docs/00_BOOTSTRAP.md` names `services/aggregation.py` and
+`services/privacy_gate.py`. Two further modules were added, both pure functions
+over existing domain models, because the invariants they serve are positive
+"must fail closed" requirements that cannot be tested by asserting absence:
+
+- **`services/consent.py`** — `INV-CONSENT-1`, `INV-CONSENT-4` and
+  `INV-MINOR-1` all require the import path to refuse by default. A refusal
+  rule with nothing callable behind it is an aspiration, and writing the gate
+  before the import flow means the flow has to come through it.
+- **`services/place_cache.py`** — `INV-CACHE-1` requires expired coordinate
+  entries to be *purged*, and `INV-CACHE-2` requires the read path to refetch
+  rather than serve stale. Both are behaviour, not schema.
+
+Neither adds a dependency, a table, an endpoint, or a persisted field. In
+particular, `consent.py` takes age eligibility as a call-time argument rather
+than storing it: whether anything about a user's age may be persisted is a
+retention decision reserved to the owner, and `User` is unchanged.
+
 ---
 
 ## For the agent
