@@ -36,6 +36,15 @@ shape is agreed before implementation. Do not build these during bootstrap.
 ### Communities
 
 ```
+POST /communities
+     body: {slug, min_cohort_threshold,
+            foundings: [{authorisation, place_id, facet_scores, free_text?}, ...]}
+     → 201 {community_id, slug, status}
+     → 409 if the slug is taken.
+     → 422 if the founding group does not meet the bar below.
+
+     Founding is a single atomic act by a group. See "Founding a community".
+
 GET  /communities
      → 200 [{community_id, slug, status}]
      Public. Never includes cohort_size or membership lists.
@@ -47,14 +56,104 @@ GET  /communities/{slug}
      Note: a SEEDING community is visible but exposes no aggregates.
 ```
 
+### Founding a community
+
+Creating a community is deliberately not a lightweight metadata call. A founder
+is defining the taste the community will aggregate around, so founding requires
+demonstrating that taste rather than asserting it. There is **no human approval
+step** — the filter is effort, not permission.
+
+**The bar.** One request must carry contributions from **five distinct users**,
+each of whom introduces **at least one venue not introduced by another member of
+the group**. The founder is one of the five, not additional to them. Five
+founders each bringing a new venue therefore yields at least five venues. If the
+bar is not met the request fails and no community is created: there is no
+partially founded state.
+
+**Why one request and not five.** Five people submitting separately would mean
+the server holding the first four contributions while waiting for a fifth —
+`user_id` beside `facet_scores`, persisted for however long the group takes.
+That is precisely the structure `INV-RAW-2` forbids and the Phase 2 decision in
+`docs/02_DOMAIN_MODEL.md` rejected. Requiring the group to submit together
+removes the wait, and with it the store.
+
+**Joint authorisation.** Each entry in `foundings` carries its own
+`authorisation`, produced by that user's client and attributable to that user
+alone. One member collects the five and submits once. A single user cannot
+supply five entries: distinctness is established by the five authorisations, not
+by five payloads.
+
+> This is a hard constraint on a design that does not exist yet. Authentication
+> is deliberately unscaffolded (`docs/00_BOOTSTRAP.md`), and whatever it becomes
+> must be able to produce a per-user authorisation that a *different* user's
+> request can carry. That is unusual, and discovering it late would be
+> expensive. The authorisation's format, signing, and replay protection are
+> unspecified here and need their own pass.
+
+**What is persisted, and what is not.** The five contributions go through the
+ordinary path — `RawContribution`, folded by `StreamingAggregator`, purged.
+There is no founder-specific ingestion route, because a second path for
+identified data is exactly what the invariants exist to prevent.
+
+The "each founder introduced a new venue" check runs **in flight**, against the
+batch, before anything is folded. Which founder introduced which venue is never
+written down: the association exists only for the length of the request and
+evaporates with the `RawContribution` objects. Enforcing the rule literally
+therefore costs nothing in retention, which it would not if founders were
+allowed to arrive one at a time.
+
+**Tier is set by how a member arrived, not by the community's status.** The
+five in the founding request receive `FOUNDER`. Everyone who joins afterwards
+receives `JOINER`, whether the community is `SEEDING` or `LIVE`.
+
+This is a change from an earlier draft, which assigned tier by status
+(`SEEDING → FOUNDER`). That rule predates the decision that founding is a
+single atomic act by a group of five: under it, members six through twenty of a
+still-seeding community would also have been founders, and "the founding group"
+would have had no durable meaning. It also matters downstream — the vouching
+chain sketched in `docs/01_STACK_DECISIONS.md` for `OPEN-6` hangs off the
+founder/joiner distinction, and needs it to identify a specific small group
+rather than everyone who happened to arrive early.
+
+`SEEDING` and `LIVE` consequently describe scale only: whether the community has
+reached the point where anything can be published, which is what
+`Community.can_go_live()` already computes. They no longer influence tier.
+
+**A founded community usually publishes nothing at first, and that is correct.**
+Community visibility and aggregate publishability are separate gates. Meeting
+the founding bar makes the community appear in `GET /communities`; it does not
+make any venue's rating publishable. Each venue is suppressed independently
+until that venue clears `min_cohort_threshold` (`INV-EXPOSE-4`), and five
+founders spread across five venues leaves every one of them at a cohort of one.
+A new community will typically be visible, joinable, and empty of ratings until
+enough joiners overlap on the same places.
+
+Do not "fix" this by exempting founders from suppression. At a cohort of one or
+two, successive reads of an aggregate let an observer solve for an individual's
+exact score from the change in the mean — the differencing attack in `OPEN-2`,
+which needs no knowledge of who the contributors are. Pseudonymity does not
+defend against it; only the threshold does.
+
+**Open parameters.** The founding minimum is currently five distinct users and
+five venues. It is a starting value, not a derived one, and it is **not** the
+same number as `min_cohort_threshold` (`OPEN-1`) — one governs what it takes to
+start a community, the other what it takes to publish a venue's rating. Both are
+the owner's to set.
+
+**What five distinct users does and does not guarantee.** It guarantees five
+distinct accounts. Whether those are five distinct people is `OPEN-6`
+(bot/Sybil resistance), which is deferred platform-wide and which founding does
+not solve on its own. The intent is five people; the verification is not
+available yet, and this bar should not be described as an anti-Sybil control
+until it is.
+
 ### Membership
 
 ```
 POST /communities/{slug}/membership
      body: {}                       (identity comes from the session)
      → 201 {membership_id, tier}
-     Tier is assigned server-side by community status: SEEDING → FOUNDER,
-     LIVE → JOINER. The client does not choose its own tier.
+     Always JOINER. The client does not choose its own tier.
 
 DELETE /communities/{slug}/membership
      → 204
