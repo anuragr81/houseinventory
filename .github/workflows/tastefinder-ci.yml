@@ -1,0 +1,61 @@
+name: tastefinder CI
+
+# houseinventory is a multi-project monorepo (see the root .code-workspace
+# file); this workflow is scoped to tastefinder/ only so it doesn't run on
+# every unrelated houseinventory change, and doesn't get confused about
+# which project's tests just failed.
+on:
+  push:
+    branches: [main]
+    paths: ["tastefinder/**", ".github/workflows/tastefinder-ci.yml"]
+  pull_request:
+    paths: ["tastefinder/**", ".github/workflows/tastefinder-ci.yml"]
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tastefinder/server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # pyproject.toml declares dev dependencies as a PEP 735
+      # dependency-group, which needs pip >= 25.1 -- see Makefile.
+      - run: pip install --upgrade pip
+      - run: pip install -e .
+      - run: pip install --group dev
+
+      - run: ruff check .
+      - run: mypy app tests
+      - run: pytest
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tastefinder/client
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the version this project was scaffolded and verified
+      # against (docs/00_BOOTSTRAP.md, Phase 4). Bump deliberately, not as
+      # a side effect of CI drifting to whatever "stable" means later.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+      # Android SDK isn't installed on this runner, so the Android build
+      # itself isn't exercised here -- flutter analyze/test don't need it,
+      # and adding the SDK just to prove `flutter build apk` still works
+      # is a real gap, not a deliberate omission. Left for whoever
+      # revisits this file once the app has more than one screen to build.

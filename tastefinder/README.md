@@ -1,65 +1,113 @@
-# Community Taste-Preference Platform — Bootstrap Bundle
+# Taste Platform
 
-This bundle contains everything Claude Code needs to initialise the server and
-client for the community taste-preference platform. It is **instructions and
-specifications only** — no application code. Claude Code writes the code.
+A preference-aggregation platform for narrow interest communities (wine-lovers,
+mountain-bikers, runners, cricketers). Members rate real-world venues on a
+schema the platform owns; the product is the **aggregate, taste-weighted
+signal** for a community, never an individual's profile or history. See
+`CLAUDE.md` for the project's working rules, and `docs/` for the full
+specification.
 
-## What this is for
+```
+/server     Python + FastAPI. Domain model, aggregation, privacy gate.
+/client     Flutter. Android-first, also builds for Linux desktop and web.
+/docs       Specifications. Read before implementing; update when reality diverges.
+```
 
-The design report (`community-taste-platform-report.pdf`) established a domain
-model, a service architecture, and a set of legal/privacy constraints. This
-bundle is the bridge between that document and an actual codebase: it restates
-the model in a form an agent can implement against, and — critically — converts
-the privacy constraints from prose into **enforceable invariants with tests**,
-so the legal analysis binds the code rather than sitting alongside it.
+## Prerequisites
 
-## How to use it
+- **Python 3.13+** with `pip >= 25.1` obtainable (a fresh `python3 -m venv`
+  typically bootstraps an older pip; `make setup` upgrades it for you — see
+  the note in the `Makefile`).
+- **Flutter** (stable channel; this project was scaffolded and CI-pinned
+  against 3.47.2 — see `docs/00_BOOTSTRAP.md`, Phase 4) on your `PATH`.
+- For building/running the Android target specifically: the Android SDK,
+  with `cmdline-tools` installed (Android Studio's "Standard" setup may skip
+  this component — check for `<sdk>/cmdline-tools/latest/bin/sdkmanager`) and
+  licenses accepted. Not needed for `flutter analyze` / `flutter test`, only
+  for `flutter build apk` / `flutter run -d <android-device>`.
+- For `make regen-client` only: a Java runtime and
+  [`openapi-generator-cli.jar`](https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/)
+  (set `OPENAPI_GENERATOR_JAR` to its path, or place it at
+  `~/install/openapi-generator/openapi-generator-cli.jar`).
 
-1. Create an empty git repository and extract this bundle into its root.
-2. Commit it as-is, before any code exists. This gives you a clean diff between
-   "what we specified" and "what the agent built".
-3. Open Claude Code in that directory and give it this prompt:
+## Setup
 
-   ```
-   Read START_HERE.md and follow its instructions.
-   ```
+```
+make setup
+```
 
-   That document orients it, points it at the rest in the right order, and tells
-   it to execute Phase 0 and stop.
+Creates the server's virtualenv (`server/.venv`) with its dependencies —
+including the dev tools, installed via `pyproject.toml`'s
+`[dependency-groups] dev` — and runs `flutter pub get` for the client. Verified
+against a clean checkout with none of the above already installed except
+Python and Flutter themselves.
 
-4. Review at each phase gate. Do not let it run all phases unattended — the
-   gates exist because Phase 2 and Phase 4 contain decisions you should see
-   before they harden.
+## Everyday commands
 
-## Contents
+All run from this directory (`tastefinder/`):
+
+| Command | What it does |
+|---|---|
+| `make test` | `pytest` (server, 131 tests incl. every privacy invariant) + `flutter test` (client) |
+| `make lint` | `ruff check` + `mypy` (server) + `flutter analyze` (client) |
+| `make run-server` | `uvicorn app.main:app --reload` on `localhost:8000` |
+| `make run-client` | `flutter run` — picks a connected device/emulator, or pass e.g. `flutter run -d linux` directly from `client/` for a specific target |
+| `make regen-client` | Regenerates `client/packages/tastefinder_api_client/` from the server's current OpenAPI schema. Requires the server's venv to exist (`make setup` first) |
+| `make migrate` | `alembic upgrade head`. Requires `DATABASE_URL` — via the environment or `server/.env` (see `server/.env.example`); there is deliberately no default |
+
+Pointing the client at a local server instead of the deployed one:
+
+```
+flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8000
+```
+
+(On the Android emulator, use `http://10.0.2.2:8000` instead of `127.0.0.1` —
+that address is the emulator's alias for the host machine.)
+
+## CI
+
+`.github/workflows/tastefinder-ci.yml`, scoped to changes under `tastefinder/`
+(this is one project inside a larger monorepo — see the root
+`.code-workspace` file). Runs the same `pytest`/`ruff`/`mypy` and
+`flutter analyze`/`flutter test` checks as `make test lint`, on every push and
+PR touching this directory. The Android SDK isn't installed on the CI runner,
+so `flutter build apk` isn't exercised there — a real gap, not a deliberate
+one, worth revisiting.
+
+## Documentation
 
 | File | Purpose |
 |---|---|
-| `START_HERE.md` | Orientation for Claude Code — what exists, what the current targets are, what is out of scope. The first thing it should read. |
-| `CLAUDE.md` | Persistent project context. Claude Code reads this automatically on every session. Keep it short and current. |
-| `docs/00_BOOTSTRAP.md` | The phased initialisation instruction. This is the main deliverable. |
-| `docs/01_STACK_DECISIONS.md` | What we chose, what we rejected, and why. Read this before proposing a stack change. |
-| `docs/02_DOMAIN_MODEL.md` | Entities, enums, and relationships from the report's UML, in implementable form. |
-| `docs/03_API_CONTRACT.md` | The HTTP surface between client and server. |
-| `docs/04_PRIVACY_INVARIANTS.md` | Non-negotiable rules derived from the legal analysis, expressed as testable assertions. |
-
-## A note on versions
-
-This bundle deliberately does **not** pin framework or library versions. Any
-version numbers written here in August 2026 would be stale by the time you run
-this. `docs/00_BOOTSTRAP.md` instructs Claude Code to resolve current stable
-versions at initialisation time and record what it actually pinned. Check that
-record rather than trusting a number written in advance.
+| `CLAUDE.md` | Project context and working rules, loaded automatically by Claude Code every session. |
+| `docs/00_BOOTSTRAP.md` | The phased build plan this project was scaffolded from. Phases 1–4 are implemented; Phase 5 (this file, CI, the Makefile) is what you're reading. |
+| `docs/01_STACK_DECISIONS.md` | What was chosen and rejected, with reasons. Read before proposing a stack change. |
+| `docs/02_DOMAIN_MODEL.md` | Entities, enums, relationships — the implementation contract. |
+| `docs/03_API_CONTRACT.md` | The HTTP surface. Only `GET /health` exists today; the rest is specification for later phases. |
+| `docs/04_PRIVACY_INVARIANTS.md` | Non-negotiable rules as testable assertions — the most important file here. |
 
 ## Status
 
-First-pass scaffolding specification. The domain model is derived from a design
-report that is itself explicitly provisional — in particular the per-community
-facet schema and the choice of privacy mechanism (threshold suppression vs.
-differential privacy) are open. Expect to revise `docs/02_DOMAIN_MODEL.md` and
-`docs/04_PRIVACY_INVARIANTS.md` once those are settled.
+Bootstrap phases 1–5 complete: server skeleton, domain model + persistence,
+the privacy gate and aggregation services (with every invariant in `docs/04`
+covered by a test), the Flutter client scaffold, and this developer-ergonomics
+pass. No business-facing API routes exist yet beyond `/health` — see
+`docs/03_API_CONTRACT.md` for what's specified but not built, and
+`docs/00_BOOTSTRAP.md`'s "Out of scope for bootstrap" list for what's
+deliberately deferred (Google Places, the Google import flow, authentication,
+per-community facet content, bot/Sybil resistance).
 
-**Nothing here is legal advice.** The invariants in `docs/04` are an engineering
-translation of a design discussion, not a compliance sign-off. They need review
-by a UK data-protection solicitor and a DPIA before any real user data is
-processed.
+Several design decisions in `docs/04_PRIVACY_INVARIANTS.md` are recorded as
+open (`OPEN-1` through `OPEN-7`) rather than resolved with a guessed default —
+in particular the minimum cohort threshold and the choice of privacy
+mechanism (threshold suppression vs. differential privacy). **Nothing here is
+legal advice**; the invariants are an engineering translation of a design
+discussion, not a compliance sign-off, and need review by a UK
+data-protection solicitor and a DPIA before any real user data is processed.
+
+## For agents continuing this build
+
+`START_HERE.md` and `docs/00_BOOTSTRAP.md` are the original phased
+instructions this project was built from (each phase ends in a gate: run the
+checks, report, stop for review — don't run phases unattended). They remain
+the reference for *how this codebase came to look the way it does* and for
+picking up any phase that isn't done yet.
