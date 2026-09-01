@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # to guess a plausible-looking value for.
     facet_catalogue_path: str | None = None
 
+    # Comma-separated ascending lower bounds for CohortBucketing, e.g.
+    # "0,10,25,50,100". No default: bucket width is a privacy parameter, the
+    # same class of decision as min_cohort_threshold (OPEN-1) and the noise
+    # parameters (OPEN-3) -- see CohortBucketing's docstring in
+    # app/domain/models.py for why a plausible-looking default is exactly the
+    # wrong move here.
+    cohort_bucketing_boundaries: str | None = None
+
     # Google Places, used as a live lookup service only (docs/01_STACK_DECISIONS.md).
     google_places_api_key: str | None = None
 

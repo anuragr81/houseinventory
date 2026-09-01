@@ -4,7 +4,8 @@ app/main.py
 FastAPI application factory.
 
 Read-only routes only, per `docs/03_API_CONTRACT.md`: `GET /facets`,
-`GET /communities`, `GET /communities/{slug}`, alongside `/health`.
+`GET /communities`, `GET /communities/{slug}`,
+`GET /communities/{slug}/places/{place_id}/aggregate`, alongside `/health`.
 `POST /communities` is not wired here. It is now an ordinary authenticated
 request rather than the five-party act it once was, but it still needs a
 session to identify the founder, and authentication is designed
@@ -15,6 +16,7 @@ call.
 
 from fastapi import FastAPI
 
+from app.api.aggregates import router as aggregates_router
 from app.api.communities import router as communities_router
 from app.api.facets import router as facets_router
 
@@ -38,6 +40,7 @@ def create_app() -> FastAPI:
 
     app.include_router(facets_router)
     app.include_router(communities_router)
+    app.include_router(aggregates_router)
 
     return app
 

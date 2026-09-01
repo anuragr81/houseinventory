@@ -234,15 +234,22 @@ POST /communities/{slug}/contributions
 ### Aggregates
 
 ```
-GET  /communities/{slug}/places/{place_id}/aggregate
+GET  /communities/{slug}/places/{place_id}/aggregate  [implemented]
      → 200 {community_id, place_id, facet_summaries, cohort_size_bucket}
      → 404 if suppressed OR absent — identical response for both (INV-EXPOSE-3).
+     Also 404 if the community itself does not exist -- a community's
+     existence is already public via GET /communities, so this adds no new
+     leak; it does not need to (and does not attempt to) equalise timing
+     against the suppressed/absent case within an existing community.
+     Requires COHORT_BUCKETING_BOUNDARIES (app/config.py) to be set -- no
+     default boundaries are shipped, for the same reason as min_cohort_threshold.
 
 GET  /communities/{slug}/aggregates?bbox=...
      → 200 [PublicAggregateView]
      Only slices above threshold are included. Suppressed slices are omitted
      silently — no placeholder entries, no "hidden" markers, no counts of how
-     many were withheld.
+     many were withheld. Not implemented: needs a new AggregateRepository
+     method the single-aggregate route above does not.
 ```
 
 ### Consent and import (later phase — spec only)

@@ -53,3 +53,27 @@ class CommunityDetailOut(BaseModel):
     slug: str
     status: CommunityStatus
     facets: list[CommunityFacetOut]
+
+
+class FacetStatOut(BaseModel):
+    """One facet's summary within a published aggregate. Never cohort_size."""
+
+    facet_id: UUID
+    mean: float
+    variance: float
+    n: int
+
+
+class AggregateOut(BaseModel):
+    """`GET /communities/{slug}/places/{place_id}/aggregate`.
+
+    Mirrors `PublicAggregateView` field-for-field rather than reusing it
+    directly -- same reasoning as the schemas above: the wire format is a
+    promise independent of how the domain model happens to be shaped today.
+    Never carries `cohort_size`, only `cohort_size_bucket` (`INV-EXPOSE-2`).
+    """
+
+    community_id: UUID
+    place_id: str
+    facet_summaries: list[FacetStatOut]
+    cohort_size_bucket: str

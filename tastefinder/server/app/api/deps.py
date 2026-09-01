@@ -1,18 +1,18 @@
 """
 app/api/deps.py
 ----------------
-FastAPI dependencies: a database session per request, and the platform's
-facet catalogue.
+FastAPI dependencies: a database session per request, the platform's facet
+catalogue, and the cohort-size bucketing policy.
 
-Both are built lazily, on first use, not at import time or app startup --
+All three are built lazily, on first use, not at import time or app startup --
 `/health` must keep working with no database and no catalogue configured
 (`app/config.py`'s whole reason for making every setting optional). A route
-that needs either asks for it as a dependency, and only then does an unset
-`DATABASE_URL` or `FACET_CATALOGUE_PATH` raise.
+that needs one asks for it as a dependency, and only then does an unset
+`DATABASE_URL`, `FACET_CATALOGUE_PATH`, or `COHORT_BUCKETING_BOUNDARIES` raise.
 
-Tests override both via FastAPI's `dependency_overrides` rather than setting
-these environment variables, so nothing here needs to run to collect the
-test suite.
+Tests override all three via FastAPI's `dependency_overrides` rather than
+setting these environment variables, so nothing here needs to run to collect
+the test suite.
 """
 
 from collections.abc import Iterator
@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.domain.facet_catalogue import FacetCatalogue, load_catalogue
+from app.domain.models import CohortBucketing
 from app.persistence.session import build_engine, build_session_factory
 
 
@@ -49,3 +50,22 @@ def get_catalogue() -> FacetCatalogue:
     """The platform's facet catalogue, loaded once per process."""
     path = get_settings().require("facet_catalogue_path")
     return load_catalogue(path)
+
+
+@lru_cache(maxsize=1)
+def get_bucketing() -> CohortBucketing:
+    """The platform's cohort-size bucketing policy, built once per process.
+
+    `CohortBucketing` deliberately has no default instance (see its
+    docstring), so -- like the facet catalogue above -- the boundaries are
+    required at the point of use rather than defaulted.
+    """
+    raw = get_settings().require("cohort_bucketing_boundaries")
+    try:
+        boundaries = tuple(int(part) for part in raw.split(","))
+    except ValueError as exc:
+        raise RuntimeError(
+            f"COHORT_BUCKETING_BOUNDARIES must be a comma-separated list of "
+            f"integers, e.g. '0,10,25,50,100'. Got: {raw!r}"
+        ) from exc
+    return CohortBucketing(boundaries=boundaries)

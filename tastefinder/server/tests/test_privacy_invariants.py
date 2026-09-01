@@ -133,14 +133,27 @@ def _all_function_defs() -> list[tuple[Path, ast.FunctionDef | ast.AsyncFunction
 
 
 def _routes() -> list[tuple[str, frozenset[str]]]:
-    """(path, methods) for every route the application actually exposes."""
-    routes = []
-    for route in create_app().routes:
-        path = getattr(route, "path", None)
-        if path is None:
-            continue
-        routes.append((path, frozenset(getattr(route, "methods", None) or set())))
-    return routes
+    """(path, methods) for every route the application actually exposes.
+
+    Built from the generated OpenAPI schema, not by walking `app.routes`
+    directly. FastAPI 0.141 wraps each `include_router()`-mounted router in
+    an internal `_IncludedRouter` object with no `.path` of its own, so a
+    walk that does `getattr(route, "path", None)` and skips `None` silently
+    drops every route this application actually serves except `/health` --
+    confirmed by checking the old implementation's output directly: it saw
+    one route where the app has five. That would have made this file's own
+    route-level checks (INV-EXPOSE-1, INV-CACHE-3) vacuous -- passing not
+    because nothing forbidden exists, but because nothing was being looked
+    at. The schema is the same source
+    test_INV_EXPOSE_1_openapi_declares_no_individual_retrieval_operation
+    already trusts, and -- unlike the internal router representation --
+    it is a stable, public contract of what the app serves.
+    """
+    schema = create_app().openapi()
+    return [
+        (path, frozenset(method.upper() for method in operations))
+        for path, operations in schema.get("paths", {}).items()
+    ]
 
 
 # ══ Group RAW ═════════════════════════════════════════════════════════════════
@@ -546,7 +559,21 @@ def test_INV_CACHE_3_no_derived_venue_catalogue_can_be_queried() -> None:
 
 
 def test_INV_CACHE_3_no_route_lists_place_references() -> None:
-    offenders = [path for path, _ in _routes() if "place" in path.lower()]
+    """A route may look up one place by its exact id; none may list or search.
+
+    `GET /communities/{slug}/places/{place_id}/aggregate` was reviewed against
+    this invariant when it was added: `place_id` is an exact path parameter,
+    the route never queries `PlaceRef` at all (it reads `CommunityAggregate`),
+    and it returns one slice, not a collection. It is therefore allow-listed
+    below rather than exempted from the check -- anything else with "place" in
+    its path, in particular a bare `/places` collection, a query-string
+    search, or a `bbox` listing, still trips this test and needs the same
+    review before being allow-listed.
+    """
+    allowed = {"/communities/{slug}/places/{place_id}/aggregate"}
+    offenders = [
+        path for path, _ in _routes() if "place" in path.lower() and path not in allowed
+    ]
     assert offenders == [], f"Place routes exist and need review against INV-CACHE-3: {offenders}"
 
 
