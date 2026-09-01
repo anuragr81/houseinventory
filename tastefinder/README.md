@@ -123,27 +123,40 @@ exercised there — a real gap, not a deliberate one, worth revisiting.
 | File | Purpose |
 |---|---|
 | `CLAUDE.md` | Project context and working rules, loaded automatically by Claude Code every session. |
-| `docs/00_BOOTSTRAP.md` | The phased build plan this project was scaffolded from. Phases 1–4 are implemented; Phase 5 (this file, CI, the Makefile) is what you're reading. |
+| `docs/00_BOOTSTRAP.md` | The phased build plan this project was scaffolded from. All six phases complete — historical, not a task list. |
 | `docs/01_STACK_DECISIONS.md` | What was chosen and rejected, with reasons. Read before proposing a stack change. |
 | `docs/02_DOMAIN_MODEL.md` | Entities, enums, relationships — the implementation contract. |
 | `docs/03_API_CONTRACT.md` | The HTTP surface. `[implemented]` marks what's real; the rest is specification for later phases. |
 | `docs/04_PRIVACY_INVARIANTS.md` | Non-negotiable rules as testable assertions — the most important file here. |
+| `docs/05_AUTH_DESIGN.md` | How sign-in will work: Google OAuth, pseudonymous accounts, HMAC'd identity link. Designed, unbuilt. |
 
 ## Status
 
-Bootstrap phases 1–5 complete: server skeleton, domain model + persistence,
-the privacy gate and aggregation services (with every invariant in `docs/04`
-covered by a test), the Flutter client scaffold, and this developer-ergonomics
-pass. No business-facing API routes exist yet beyond `/health` — see
-`docs/03_API_CONTRACT.md` for what's specified but not built, and
-`docs/00_BOOTSTRAP.md`'s "Out of scope for bootstrap" list for what's
-deliberately deferred (Google Places, the Google import flow, authentication,
-per-community facet content, bot/Sybil resistance).
+The bootstrap (`docs/00_BOOTSTRAP.md`, six phases) is complete, and work has
+continued past it.
 
-Several design decisions in `docs/04_PRIVACY_INVARIANTS.md` are recorded as
-open (`OPEN-1` through `OPEN-8`) rather than resolved with a guessed default —
-in particular the minimum cohort threshold and the choice of privacy
-mechanism (threshold suppression vs. differential privacy). **Nothing here is
+**Built and tested:** the domain model, aggregation and privacy gate; the
+persistence layer (repositories, transactions, an atomic founding write);
+community founding as a service; the platform-owned facet catalogue; four
+read-only routes (`/health`, `/facets`, `/communities`,
+`/communities/{slug}`); and the Flutter client, which builds for Android,
+Linux and web.
+
+**Designed but not built:** authentication (`docs/05_AUTH_DESIGN.md`). This is
+the immediate blocker — `POST /communities` needs only a session to identify
+the founder; its decision logic and atomic write both already exist.
+
+**Deliberately not started:** Google Places, the Google Data Portability
+import, per-community facet *content* (the mechanism exists, the facets are
+unset), bot/Sybil resistance, and any moderation or takedown channel.
+
+Eight decisions in `docs/04_PRIVACY_INVARIANTS.md` are recorded as open
+(`OPEN-1` through `OPEN-8`) rather than resolved with a guessed default. Two
+constrain what can safely be published and are worth reading before building
+anything that publishes: `OPEN-1` (the minimum cohort threshold, which has no
+safe default) and `OPEN-7` (`cohort_size` counts contributions rather than
+contributors, so one account can raise it alone — which matters more now that
+founding is a solo act). **Nothing here is
 legal advice**; the invariants are an engineering translation of a design
 discussion, not a compliance sign-off, and need review by a UK
 data-protection solicitor and a DPIA before any real user data is processed.

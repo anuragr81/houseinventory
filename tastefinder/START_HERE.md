@@ -5,14 +5,30 @@ touching anything.**
 
 ## Current state of this repository
 
-There is **no application code yet**. This repository currently contains
-specifications only. You are being asked to build the first code that will exist
-here.
+**The bootstrap is finished and the project is past it.** All six phases of
+`docs/00_BOOTSTRAP.md` are complete, and work has continued beyond them. There
+is a working server, a Flutter client, a persistence layer, CI, and a test
+suite that pins every privacy invariant.
 
-That is deliberate. The specifications were written before the code because this
-project has legal and privacy constraints that must shape the implementation
-rather than be retrofitted onto it. Treat the documents as binding, not as
-background reading.
+What exists, roughly newest first:
+
+| Area | State |
+|---|---|
+| `GET /health`, `/facets`, `/communities`, `/communities/{slug}` | Built, tested, live |
+| `POST /communities` (founding) | Decision logic built and tested; **no route** — needs a session |
+| Authentication | **Designed** (`docs/05_AUTH_DESIGN.md`), not built. This is the next blocker |
+| Persistence layer | Built: repositories, transactions, atomic founding write |
+| Domain model, aggregation, privacy gate | Built and tested |
+| Facet catalogue | Built; **no content** — the platform's actual facet list is unset |
+| Flutter client | Scaffolded, builds for Android/Linux/web, calls `/health` |
+| Databases | SQLite locally and in tests; **MySQL** deployed. Suite runs against both |
+| Google Places, Google import, Sybil resistance, moderation | Not started, deliberately |
+
+**The single most useful thing to know:** the next thing standing between this
+project and a writable API is implementing Part 1 of `docs/05_AUTH_DESIGN.md`
+(Google OAuth plus server-issued sessions). `POST /communities` needs nothing
+else — its decision logic is already written and tested in
+`app/services/community_founding.py`.
 
 ## What this project is, in one paragraph
 
@@ -32,44 +48,47 @@ Read in this order. Do not skip ahead to implementation.
 |---|---|---|
 | 1 | `START_HERE.md` | This file. Orientation and current targets. |
 | 2 | `CLAUDE.md` | Standing project context and working conventions. Auto-loaded every session. |
-| 3 | `docs/00_BOOTSTRAP.md` | **Your actual task list.** Six phases, each ending in a gate where you stop and report. |
+| 3 | `docs/00_BOOTSTRAP.md` | How the codebase came to look like this. Six phases, all complete. Historical now, not a task list. |
 | 4 | `docs/01_STACK_DECISIONS.md` | What was chosen and rejected, with reasons. Read before proposing any stack change. |
 | 5 | `docs/02_DOMAIN_MODEL.md` | Entities, enums, relationships, field names. The implementation contract. |
-| 6 | `docs/03_API_CONTRACT.md` | The HTTP surface. Only `/health` is in scope right now. |
+| 6 | `docs/03_API_CONTRACT.md` | The HTTP surface. `[implemented]` marks what is real; the rest is still specification. |
 | 7 | `docs/04_PRIVACY_INVARIANTS.md` | Non-negotiable rules as testable assertions. The most important file here. |
+| 8 | `docs/05_AUTH_DESIGN.md` | How sign-in will work. Designed, unbuilt — and the next thing to build. |
 
 There is also a design report (`community-taste-platform-report.pdf`, held
 outside this repo) that explains *why* the model has this shape, with the legal
 analysis and full source citations. You do not need it to implement, but the docs
 reference its section numbers where the reasoning matters.
 
-## Your targets at this stage
+## Where to pick up
 
-The goal right now is **a correct skeleton, not a working product.** Specifically,
-by the end of Phase 5 you should have produced:
+There is no single prescribed next task any more — the phased plan is done.
+The candidates, in the order they unblock the most:
 
-1. A FastAPI server that starts, exposes `GET /health`, and nothing else.
-2. The full domain model as typed Pydantic models plus SQLAlchemy tables, with a
-   working Alembic migration.
-3. A `PrivacyGate` and `StreamingAggregator` whose behaviour is pinned by tests
-   derived from `docs/04_PRIVACY_INVARIANTS.md` — one test per invariant, each
-   carrying the invariant ID in its name.
-4. A Flutter client that builds for Android, calls `GET /health`, and displays
-   the result.
-5. Dart API models **generated** from the server's OpenAPI schema, with a
-   one-command regeneration target.
-6. A Makefile and CI config such that a fresh clone can reach passing tests using
-   only the README.
-
-That is the whole target. No features beyond this.
+1. **Implement `docs/05_AUTH_DESIGN.md` Part 1** — Google OAuth, an
+   `identity_link` table storing only an HMAC of the Google `sub`, and
+   server-issued bearer sessions. Everything else on this list is waiting
+   behind it.
+2. **Wire `POST /communities`** — the decision logic and the atomic write both
+   exist (`community_founding.py`, `founding_store.py`). It needs a session to
+   identify the founder, and nothing else.
+3. **Decide the facet catalogue's contents** — the mechanism is built and
+   `GET /facets` serves it, but no facets are defined. This is product content,
+   not an implementation task, and it is the owner's to supply.
+4. **Resolve an `OPEN-` item.** `OPEN-1` (cohort threshold) and `OPEN-7`
+   (`cohort_size` counts contributions, not contributors) are the two that
+   most constrain what can safely be published.
 
 ## What success looks like
 
-- `pytest` passes, including every privacy-invariant test.
+- `pytest` passes, including every privacy-invariant test, and the meta-test
+  confirming every documented invariant *has* a test.
 - `ruff check` and `mypy` are clean.
 - `flutter analyze` and `flutter test` are clean.
-- The Android app talks to a locally running server.
-- Every phase gate was reported and reviewed before the next began.
+- The persistence suite passes against **both** SQLite and MySQL
+  (`make test-mysql`) -- dialects disagree, and each disagreement so far was
+  found by running real SQL rather than by reading documentation.
+- Anything that diverges from `docs/` changed the doc in the same commit.
 
 ## What is explicitly NOT a target yet
 
@@ -79,7 +98,8 @@ specification pass first:
 - Google Places integration (venue lookup)
 - Google Data Portability import (the founder seeding flow)
 - The normalisation adapter
-- Authentication, sessions, or any user identity beyond a pseudonymous UUID
+- ~~Authentication~~ — now *designed* in `docs/05_AUTH_DESIGN.md` and ready to
+  build. Still unbuilt, so nothing may assume a session exists yet.
 - Per-community facet content (the mechanism yes, the actual wine/cricket facet
   sets no)
 - Any business-facing aggregate query API
@@ -91,19 +111,25 @@ something else easier to test, stop and say so instead.
 
 ## How to work
 
-`docs/00_BOOTSTRAP.md` defines six phases. Each ends in a **GATE**. At a gate you:
+The phase gates are spent, but the habit they enforced is the reason this
+codebase is worth trusting, and it still applies:
 
-1. Run the stated checks.
-2. Report what you did, what versions you pinned, and anything that surprised you.
-3. **Stop.** Wait for review. Do not continue unprompted.
+1. Run the checks — `make test`, `make lint`, and `make test-mysql` if the
+   change touches persistence.
+2. Report what you did and anything that surprised you. The surprises have
+   consistently been the valuable part: SQLite silently ignoring foreign keys
+   and dropping timezones, MySQL ignoring `CHECK` constraints before 8.0.16,
+   Alembic generating a downgrade MySQL refuses to run. None of those were
+   found by reading documentation.
+3. **Stop and raise it** rather than improvising, when a decision is the
+   owner's. `CLAUDE.md`'s "What to ask about rather than decide" list is not
+   decoration — most of the good decisions in this project came from that
+   pause.
 
-The gates exist because two decisions in particular need a human eye before they
-harden: how `RawContribution` is persisted (Gate 2), and the mapping from
-invariants to tests (Gate 3).
-
-If a phase cannot be completed as written — a missing tool, a version conflict,
-an ambiguous instruction — stop and say so. Do not improvise a substitute and
-carry on silently.
+**Verify claims rather than asserting them.** Where an invariant says something
+must not exist, plant the thing and confirm the test fails; several tests in
+this suite were written that way and one was found to be vacuous. Where a
+route is meant to work, run a real server and hit it, not only a test client.
 
 ## The single rule that overrides everything else
 
@@ -123,16 +149,26 @@ not the test.**
   compiles Dart into an Android binary. Nothing Flutter-related is ever deployed
   to the server. Do not add Flutter or Dart to any server-side config, container,
   or deployment script.
-- **The server is a separate deployment** (see `docs/01_STACK_DECISIONS.md` for
-  the current target). During all bootstrap phases the server runs locally on
-  `localhost:8000` and the Android emulator reaches it at `http://10.0.2.2:8000`.
+- **The server is a separate deployment** — PythonAnywhere, mounted under
+  `/tastefinder` by the repository-root `wsgi.py`, alongside an unrelated Flask
+  app. That file degrades gracefully: if the tastefinder dependencies are not
+  importable it unmounts the whole thing rather than breaking the other app, so
+  a missing dependency shows up as `/tastefinder/*` returning 404 rather than
+  as an error. Locally the server runs on `localhost:8000`, and the Android
+  emulator reaches it at `http://10.0.2.2:8000`.
+- **The database is MySQL when deployed**, SQLite locally and in tests. The
+  persistence suite runs against both; see `docs/01_STACK_DECISIONS.md` for why
+  MySQL was chosen over Postgres and what that trade cost.
 - **The API base URL is the only coupling between client and server.** It must be
   configurable — build-time or runtime config, not a hardcoded literal — so that
   switching between local and deployed requires no code change.
 
 ## First action
 
-Read `CLAUDE.md`, then `docs/00_BOOTSTRAP.md`, then execute **Phase 0** only.
-Phase 0 creates nothing; it surveys the environment and reports.
+Read `CLAUDE.md`, then skim `docs/04_PRIVACY_INVARIANTS.md` -- it is the file
+most likely to make you reject an otherwise reasonable design.
 
-Stop at the Phase 0 gate.
+Then ask what to work on rather than assuming. The phased plan that used to
+answer that question is finished; "Where to pick up" above lists candidates,
+but several of them turn on decisions that are the owner's to make, not
+yours.
