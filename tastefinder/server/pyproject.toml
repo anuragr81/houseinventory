@@ -63,6 +63,12 @@ extend-exclude = ["migrations/versions"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's Depends()-in-a-default-argument is the documented, intended way
+# to declare a dependency -- it is not evaluated at import time, only per
+# request. B008 does not special-case this by default.
+"app/api/*.py" = ["B008"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

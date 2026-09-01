@@ -200,7 +200,10 @@ def test_public_view_carries_a_bucket_and_never_the_exact_count() -> None:
     view = aggregate.to_public_view(CohortBucketing(boundaries=(0, 10, 25, 50, 100)))
     assert view.cohort_size_bucket == "25-49"
     assert "cohort_size" not in view.model_dump()
-    assert "37" not in view.model_dump_json()
+    # Not a substring search for "37": community_id is a random UUID and
+    # will contain that digit pair by chance often enough to make the test
+    # flaky. Checking every value in the parsed payload is exact instead.
+    assert 37 not in view.model_dump().values()
 
 
 def test_public_view_has_no_free_text_field() -> None:

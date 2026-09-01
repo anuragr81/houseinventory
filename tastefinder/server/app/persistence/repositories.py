@@ -92,6 +92,20 @@ class CommunityRepository:
         )
         if row is None:
             return None
+        return self._to_domain(row)
+
+    def list_all(self) -> list[Community]:
+        """Every community, for `GET /communities`.
+
+        No pagination yet: fine at the scale a handful of five-person
+        foundings produce, wrong once this list is worth paginating, and
+        nothing here promises otherwise.
+        """
+        rows = self._session.scalars(select(CommunityTable))
+        return [self._to_domain(row) for row in rows]
+
+    @staticmethod
+    def _to_domain(row: CommunityTable) -> Community:
         return Community(
             community_id=row.community_id,
             slug=row.slug,
@@ -123,6 +137,23 @@ class FacetRepository:
             select(FacetTable.facet_id).where(FacetTable.community_id == community_id)
         )
         return set(rows)
+
+    def for_community(self, community_id: UUID) -> list[Facet]:
+        """A community's facets, for `GET /communities/{slug}`."""
+        rows = self._session.scalars(
+            select(FacetTable).where(FacetTable.community_id == community_id)
+        )
+        return [
+            Facet(
+                facet_id=row.facet_id,
+                community_id=row.community_id,
+                name=row.name,
+                value_type=row.value_type,
+                scale_min=row.scale_min,
+                scale_max=row.scale_max,
+            )
+            for row in rows
+        ]
 
 
 class MembershipRepository:

@@ -126,7 +126,7 @@ exercised there — a real gap, not a deliberate one, worth revisiting.
 | `docs/00_BOOTSTRAP.md` | The phased build plan this project was scaffolded from. Phases 1–4 are implemented; Phase 5 (this file, CI, the Makefile) is what you're reading. |
 | `docs/01_STACK_DECISIONS.md` | What was chosen and rejected, with reasons. Read before proposing a stack change. |
 | `docs/02_DOMAIN_MODEL.md` | Entities, enums, relationships — the implementation contract. |
-| `docs/03_API_CONTRACT.md` | The HTTP surface. Only `GET /health` exists today; the rest is specification for later phases. |
+| `docs/03_API_CONTRACT.md` | The HTTP surface. `[implemented]` marks what's real; the rest is specification for later phases. |
 | `docs/04_PRIVACY_INVARIANTS.md` | Non-negotiable rules as testable assertions — the most important file here. |
 
 ## Status

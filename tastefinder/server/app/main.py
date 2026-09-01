@@ -3,11 +3,19 @@ app/main.py
 -----------
 FastAPI application factory.
 
-Phase 1 scope: a health endpoint and nothing else. Routers, persistence, and
-the privacy gate arrive in later phases -- see docs/00_BOOTSTRAP.md.
+Read-only routes only, per `docs/03_API_CONTRACT.md`: `GET /facets`,
+`GET /communities`, `GET /communities/{slug}`, alongside `/health`.
+`POST /communities` is not wired here -- it needs a way to verify five
+authorisations belong to five distinct users, and authentication is
+deliberately unbuilt (`docs/00_BOOTSTRAP.md`'s exclusion list). See
+`app/services/community_founding.py` for the decision logic that route will
+eventually call.
 """
 
 from fastapi import FastAPI
+
+from app.api.communities import router as communities_router
+from app.api.facets import router as facets_router
 
 
 def create_app() -> FastAPI:
@@ -24,8 +32,11 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:
-        """Liveness probe. The only endpoint in scope for Phase 1."""
+        """Liveness probe."""
         return {"status": "ok"}
+
+    app.include_router(facets_router)
+    app.include_router(communities_router)
 
     return app
 

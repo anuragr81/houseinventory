@@ -33,6 +33,9 @@ shape is agreed before implementation. Do not build these during bootstrap.
 
 ## Planned surface
 
+Marked **[implemented]** below are wired up as real FastAPI routes; everything
+else is still specification only, per the bootstrap phasing.
+
 ### Communities
 
 ```
@@ -50,21 +53,28 @@ POST /communities
 
      Founding is a single atomic act by a group. See "Founding a community".
 
-GET  /facets
+GET  /facets  [implemented]
      → 200 [{key, name, value_type, scale_min, scale_max}]
      The platform's facet catalogue. A client needs this before it can build a
-     founding request.
+     founding request. Source is FACET_CATALOGUE_PATH (app/config.py) -- a
+     JSON file, no default content shipped (see the module docstring on
+     app/domain/facet_catalogue.py for why).
 
-GET  /communities
+GET  /communities  [implemented]
      → 200 [{community_id, slug, status}]
      Public. Never includes cohort_size or membership lists.
 
-GET  /communities/{slug}
+GET  /communities/{slug}  [implemented]
      → 200 {community_id, slug, status, facets: [{facet_id, name, value_type,
             scale_min, scale_max}]}
      → 404 if not found.
      Note: a SEEDING community is visible but exposes no aggregates.
 ```
+
+Neither read route goes through `PrivacyGate`: nothing here is a
+`CommunityAggregate`, a cohort size, or contribution data, so there is nothing
+for that gate to suppress. It exists for the aggregate routes below, which are
+still specification only.
 
 ### Founding a community
 

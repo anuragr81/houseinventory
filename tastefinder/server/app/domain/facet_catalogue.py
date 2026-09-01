@@ -29,7 +29,9 @@ default is how an open decision silently becomes a shipped one. This follows
 `CohortBucketing`, which has no default instance for the same reason.
 """
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.domain.enums import FacetValueType
 
@@ -136,3 +138,47 @@ class FacetCatalogue:
         return tuple(
             definition for definition in self.definitions if definition.key in keys
         )
+
+
+def load_catalogue(path: str) -> FacetCatalogue:
+    """Read a `FacetCatalogue` from a JSON file.
+
+    The file holds a list of objects with the same fields as
+    `FacetDefinition`: `key`, `name`, `value_type`, and (for `NUMERIC`)
+    `scale_min`/`scale_max`. Validation -- unique keys, no `TEXT` facets,
+    bounded numeric scales -- runs through the same constructors every other
+    caller uses, so a malformed file fails exactly the way a malformed
+    request would.
+    """
+    try:
+        raw = json.loads(Path(path).read_text())
+    except FileNotFoundError as error:
+        raise FacetCatalogueError(f"Facet catalogue file not found: {path!r}") from error
+    except json.JSONDecodeError as error:
+        raise FacetCatalogueError(
+            f"Facet catalogue file is not valid JSON: {path!r}"
+        ) from error
+
+    try:
+        definitions = tuple(
+            FacetDefinition(
+                key=entry["key"],
+                name=entry["name"],
+                value_type=FacetValueType(entry["value_type"]),
+                scale_min=entry.get("scale_min"),
+                scale_max=entry.get("scale_max"),
+            )
+            for entry in raw
+        )
+    except (KeyError, TypeError) as error:
+        raise FacetCatalogueError(
+            f"Facet catalogue file {path!r} has an entry missing 'key', 'name', "
+            f"or 'value_type'."
+        ) from error
+    except ValueError as error:
+        raise FacetCatalogueError(
+            f"Facet catalogue file {path!r} names a value_type that is not one "
+            f"of {[t.value for t in FacetValueType]}."
+        ) from error
+
+    return FacetCatalogue(definitions=definitions)

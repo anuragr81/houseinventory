@@ -32,8 +32,15 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Persistence. SQLite locally and in tests, PostgreSQL when deployed.
+    # Persistence. SQLite locally and in tests, MySQL when deployed
+    # (docs/01_STACK_DECISIONS.md); PostgreSQL is also supported.
     database_url: str | None = None
+
+    # Path to a JSON file describing the platform's facet catalogue -- see
+    # app/domain/facet_catalogue.py. No default and no fallback content:
+    # which facets exist is product content the owner supplies, not something
+    # to guess a plausible-looking value for.
+    facet_catalogue_path: str | None = None
 
     # Google Places, used as a live lookup service only (docs/01_STACK_DECISIONS.md).
     google_places_api_key: str | None = None
