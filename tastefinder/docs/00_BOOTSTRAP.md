@@ -153,9 +153,23 @@ can be checked that none is missing. Wait.
 2. Set up state management and routing. Prefer a small, well-established
    combination over anything exotic; state your choice and why at the gate.
 3. **Generate** Dart models from the server's OpenAPI schema into
-   `client/lib/api/generated/`. Add a `make regen-client` (or equivalent) target
-   so regeneration is one command. Mark the directory as generated and excluded
-   from manual edits.
+   `client/packages/tastefinder_api_client/`. Add a `make regen-client` (or
+   equivalent) target so regeneration is one command. Mark the directory as
+   generated and excluded from manual edits.
+
+   > **Location note (Phase 4).** This originally said
+   > `client/lib/api/generated/`. Nesting a Dart package's `pubspec.yaml`
+   > inside another package's `lib/` directory hits a real compiler bug: when
+   > the two packages' default language versions differ (as they do here --
+   > this app targets a newer Dart than the openapi-generator `dart-dio`
+   > output declares), part-file resolution fails. Confirmed by reproducing
+   > it against `flutter build`, not just analysis or tests -- a standalone
+   > `dart analyze` of the generated package alone was clean, so this is
+   > specific to the nesting, not the generated code itself. Moved to
+   > `client/packages/tastefinder_api_client/`, the conventional location for
+   > a local path-dependency package sitting alongside a Flutter app. Package
+   > name and all `package:tastefinder_api_client/...` imports are unchanged
+   > -- only the physical location moved.
 4. Build a single screen that calls `GET /health` and displays the result. That
    is the whole feature set for this phase — it proves the wiring end to end.
 
