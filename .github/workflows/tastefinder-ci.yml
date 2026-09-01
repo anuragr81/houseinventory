@@ -17,6 +17,25 @@ jobs:
     defaults:
       run:
         working-directory: tastefinder/server
+
+    # MySQL is the deployment target, and dialects disagree about things that
+    # look settled -- see the database decision in docs/01_STACK_DECISIONS.md
+    # for the three divergences found by actually running against one. The
+    # persistence suite runs against SQLite unconditionally and against this
+    # service too, via TEST_MYSQL_URL below.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: tastefinder
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -pci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,12 +46,14 @@ jobs:
       # pyproject.toml declares dev dependencies as a PEP 735
       # dependency-group, which needs pip >= 25.1 -- see Makefile.
       - run: pip install --upgrade pip
-      - run: pip install -e .
+      - run: pip install -e ".[mysql]"
       - run: pip install --group dev
 
       - run: ruff check .
       - run: mypy app tests
       - run: pytest
+        env:
+          TEST_MYSQL_URL: mysql+pymysql://root:ci@127.0.0.1:3306/tastefinder
 
   client:
     runs-on: ubuntu-latest

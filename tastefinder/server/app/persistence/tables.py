@@ -52,6 +52,13 @@ class UtcDateTime(TypeDecorator[datetime]):
     type and the disagreement only shows up wherever the schema is not the one
     the tests ran against.
 
+    MySQL needs the other half of the same treatment. Its `DATETIME` has no
+    timezone at all -- `timezone=True` is accepted and ignored by the dialect
+    -- and its drivers will not bind an aware value. So the conversion to UTC
+    happens here and the offset is dropped *deliberately* before binding,
+    which is safe precisely because the value is known to be UTC by then. The
+    read side reattaches it.
+
     Naive values are rejected on the way in rather than assumed to be UTC:
     there is no way to know what zone an unlabelled timestamp meant, and
     guessing produces data that looks fine and is wrong.
@@ -68,7 +75,13 @@ class UtcDateTime(TypeDecorator[datetime]):
                 "Naive datetime passed to a UtcDateTime column. Attach a timezone "
                 "at the point the value is created; this layer will not guess one."
             )
-        return value.astimezone(UTC)
+        as_utc = value.astimezone(UTC)
+        if dialect.name == "mysql":
+            # MySQL DATETIME stores no offset and its drivers reject an aware
+            # value. Dropping tzinfo here loses nothing: the value is UTC, and
+            # process_result_value says so again on the way back.
+            return as_utc.replace(tzinfo=None)
+        return as_utc
 
     def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
         if value is None:

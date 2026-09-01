@@ -3,7 +3,7 @@
 # reasoning behind anything non-obvious here (particularly the pip upgrade
 # below).
 
-.PHONY: setup test lint run-server run-client regen-client migrate
+.PHONY: setup test test-mysql lint run-server run-client regen-client migrate
 
 setup:
 	python3 -m venv server/.venv
@@ -20,6 +20,14 @@ setup:
 test:
 	cd server && .venv/bin/pytest
 	cd client && flutter test
+
+# The persistence suite runs against SQLite always, and against MySQL too when
+# TEST_MYSQL_URL is set -- unset, those cases skip rather than fail. Dialects
+# disagree about things that look settled (see docs/01_STACK_DECISIONS.md), so
+# the dialect this deploys on is worth exercising before deploying on it.
+test-mysql:
+	cd server && TEST_MYSQL_URL="$${TEST_MYSQL_URL:?set TEST_MYSQL_URL, e.g. mysql+pymysql://root:pass@127.0.0.1:3306/tastefinder}" \
+		.venv/bin/pytest tests/test_persistence_repositories.py
 
 lint:
 	cd server && .venv/bin/ruff check .

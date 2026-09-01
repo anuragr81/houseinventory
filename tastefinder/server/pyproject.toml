@@ -18,8 +18,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# PostgreSQL driver. Deployed environments use Postgres; local dev and tests
-# use SQLite, so this is not a hard dependency of the package.
+# Database drivers. Local dev and tests run on SQLite, which needs no driver,
+# so neither of these is a hard dependency of the package.
+#
+# MySQL is the deployment target (docs/01_STACK_DECISIONS.md). PyMySQL is pure
+# Python: no build toolchain, which matters on a host where compiling a C
+# extension is awkward. mysqlclient is faster but needs one.
+mysql = ["pymysql>=1.1.0"]
+# Postgres remains supported and tested-capable; see the database decision in
+# docs/01_STACK_DECISIONS.md for why it is no longer the default target.
 postgres = ["psycopg[binary]>=3.3.4"]
 
 [dependency-groups]

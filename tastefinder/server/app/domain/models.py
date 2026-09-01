@@ -256,7 +256,11 @@ class CommunityAggregate(BaseModel):
     community_id: UUID
     place_id: str
     facet_stats: dict[UUID, FacetStat] = Field(default_factory=dict)
-    cohort_size: int = 0
+    # Non-negative at the model layer, not only in the database. The table
+    # carries a CHECK constraint too, but MySQL silently ignored CHECK
+    # constraints before 8.0.16 and SQLite needs its own coaxing -- an
+    # integrity rule that only some dialects enforce is not an integrity rule.
+    cohort_size: int = Field(default=0, ge=0)
     last_updated_at: datetime
     noise_epsilon: float | None = None
 

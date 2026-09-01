@@ -155,7 +155,7 @@ Settled at design time; revisit only if a constraint below changes.
 | Piece | Runs on |
 |---|---|
 | Flutter SDK, Dart, Android SDK, emulator | Developer machine only — a build toolchain, never deployed |
-| FastAPI server + Postgres | PythonAnywhere (EU region) |
+| FastAPI server + MySQL | PythonAnywhere (EU region) |
 | Compiled `.aab` / `.apk` | Google Play Store → users' phones |
 
 **Server host: PythonAnywhere, EU system** (`username.eu.pythonanywhere.com`).
@@ -175,11 +175,48 @@ Because of both, **do not couple the application to this host.** Keep the server
 a plain ASGI app runnable by any ASGI server. If the host ever needs changing,
 that must be a deployment concern only, touching no application code.
 
-**Database: PostgreSQL**, available on PythonAnywhere as a paid add-on (each
-account gets its own Postgres server in a container, unlike their multi-tenanted
-MySQL). MySQL remains a viable fallback since the schema is deliberately
-provider-agnostic — but that is a conscious decision to make, not a default to
-drift into.
+**Database: MySQL** (revised — was PostgreSQL).
+
+The original choice was Postgres, because PythonAnywhere gives each account its
+own Postgres server in a container, where their MySQL is multi-tenanted. That
+isolation argument still stands and is the thing being traded away here. What
+changed is the price of it: Postgres on PythonAnywhere requires a paid plan and
+enabling the add-on, while MySQL was already provisioned on the account this
+deploys to. Taking the smaller isolation boundary — a shared server with
+per-account database and user permissions, rather than a separate container —
+was judged an acceptable trade for not upgrading the plan.
+
+Recorded as a decision rather than a drift, which is what the previous version
+of this paragraph asked for. Postgres remains supported: nothing in the schema
+uses a Postgres-specific feature (no JSONB, no arrays, and enums are
+deliberately `native_enum=False`), and the `postgres` extra is still declared.
+
+**What this cost, concretely.** "Provider-agnostic schema" is a claim, and
+testing it found three real dialect divergences that no amount of reading
+would have:
+
+- MySQL's `DATETIME` carries no timezone, and `timezone=True` is accepted and
+  ignored by the dialect. The `UtcDateTime` type decorator, originally written
+  because SQLite silently returned naive datetimes, now normalises for MySQL
+  too. A non-UTC input round-tripping to the same instant is tested on every
+  dialect, because that is the case that distinguishes a real conversion from
+  one that happens to work on UTC test data.
+- **MySQL ignored `CHECK` constraints entirely before 8.0.16.** The schema has
+  one (`cohort_size >= 0`). MySQL 8.4 enforces it, verified; a 5.7 server would
+  not, silently. The same rule is therefore *also* enforced on the Pydantic
+  model, because an integrity rule only some dialects keep is not an integrity
+  rule. **Check the server version before deploying** — PythonAnywhere accounts
+  are not all on MySQL 8, and migrating is a support request, not a setting.
+- The initial migration's `downgrade` could not run on MySQL at all: Alembic
+  generated a `DROP INDEX` for each index before its table, and MySQL refuses
+  to drop an index still backing a foreign key (error 1553). Fixed by dropping
+  the tables directly, which removes their indexes anyway.
+
+**The suite runs against every dialect this project claims to support.** That,
+rather than an abstraction layer over SQLAlchemy, is the portability
+insurance: SQLAlchemy is already the adapter, and the repositories already
+return domain models rather than ORM rows, so the swap surface is confined to
+`app/persistence/`. What was missing was not indirection but evidence.
 
 **Client/server coupling** is exactly one value: the API base URL.
 `http://10.0.2.2:8000` from the Android emulator during development (that address

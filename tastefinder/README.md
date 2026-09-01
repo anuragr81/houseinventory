@@ -48,12 +48,53 @@ All run from this directory (`tastefinder/`):
 
 | Command | What it does |
 |---|---|
-| `make test` | `pytest` (server, 131 tests incl. every privacy invariant) + `flutter test` (client) |
+| `make test` | `pytest` (server, incl. every privacy invariant) + `flutter test` (client) |
+| `make test-mysql` | The persistence suite against a real MySQL. Needs `TEST_MYSQL_URL` |
 | `make lint` | `ruff check` + `mypy` (server) + `flutter analyze` (client) |
 | `make run-server` | `uvicorn app.main:app --reload` on `localhost:8000` |
 | `make run-client` | `flutter run` — picks a connected device/emulator, or pass e.g. `flutter run -d linux` directly from `client/` for a specific target |
 | `make regen-client` | Regenerates `client/packages/tastefinder_api_client/` from the server's current OpenAPI schema. Requires the server's venv to exist (`make setup` first) |
 | `make migrate` | `alembic upgrade head`. Requires `DATABASE_URL` — via the environment or `server/.env` (see `server/.env.example`); there is deliberately no default |
+
+## Databases
+
+SQLite for local development and tests; **MySQL** is the deployment target
+(`docs/01_STACK_DECISIONS.md` records why it was chosen over Postgres, and what
+that trade costs). Postgres remains supported — nothing in the schema uses a
+dialect-specific feature.
+
+Install the driver for whichever you deploy against:
+
+```
+pip install -e ".[mysql]"      # or ".[postgres]"
+```
+
+The persistence suite runs against **every dialect the project claims to
+support**, because they disagree about things that look settled — SQLite
+silently ignored foreign keys and dropped timezones, MySQL has no
+timezone-aware `DATETIME`, and MySQL before 8.0.16 ignored `CHECK` constraints
+outright. Each of those was found by running real SQL, not by reading
+documentation.
+
+To include MySQL locally, point `TEST_MYSQL_URL` at a throwaway server and run
+`make test-mysql`. Unset, those cases skip and SQLite still runs in full. A
+disposable one via Podman:
+
+```
+podman run -d --name tf-mysql --security-opt label=disable \
+  --tmpfs /var/lib/mysql:rw,size=2g \
+  -e MYSQL_ROOT_PASSWORD=devroot -e MYSQL_DATABASE=tastefinder \
+  -p 13306:3306 docker.io/library/mysql:8.4
+```
+
+(`--tmpfs` puts the data directory in RAM: throwaway anyway, and it turns a
+multi-minute InnoDB initialisation into seconds. `label=disable` is needed
+where SELinux blocks the container's dynamic linker.)
+
+> **Before deploying to MySQL, check the server version:** `SELECT VERSION();`.
+> `CHECK` constraints are silently ignored before 8.0.16, and PythonAnywhere
+> accounts are not all on MySQL 8 — migrating is a support request, not a
+> setting.
 
 Pointing the client at a local server instead of the deployed one:
 
@@ -70,9 +111,12 @@ that address is the emulator's alias for the host machine.)
 (this is one project inside a larger monorepo — see the root
 `.code-workspace` file). Runs the same `pytest`/`ruff`/`mypy` and
 `flutter analyze`/`flutter test` checks as `make test lint`, on every push and
-PR touching this directory. The Android SDK isn't installed on the CI runner,
-so `flutter build apk` isn't exercised there — a real gap, not a deliberate
-one, worth revisiting.
+PR touching this directory. The server job runs a MySQL 8.4 service container
+so the persistence suite is exercised against the deployment dialect, not only
+SQLite.
+
+The Android SDK isn't installed on the CI runner, so `flutter build apk` isn't
+exercised there — a real gap, not a deliberate one, worth revisiting.
 
 ## Documentation
 
@@ -97,7 +141,7 @@ deliberately deferred (Google Places, the Google import flow, authentication,
 per-community facet content, bot/Sybil resistance).
 
 Several design decisions in `docs/04_PRIVACY_INVARIANTS.md` are recorded as
-open (`OPEN-1` through `OPEN-7`) rather than resolved with a guessed default —
+open (`OPEN-1` through `OPEN-8`) rather than resolved with a guessed default —
 in particular the minimum cohort threshold and the choice of privacy
 mechanism (threshold suppression vs. differential privacy). **Nothing here is
 legal advice**; the invariants are an engineering translation of a design
