@@ -63,12 +63,24 @@ is defining the taste the community will aggregate around, so founding requires
 demonstrating that taste rather than asserting it. There is **no human approval
 step** — the filter is effort, not permission.
 
-**The bar.** One request must carry contributions from **five distinct users**,
-each of whom introduces **at least one venue not introduced by another member of
-the group**. The founder is one of the five, not additional to them. Five
-founders each bringing a new venue therefore yields at least five venues. If the
-bar is not met the request fails and no community is created: there is no
-partially founded state.
+**The bar.** One request must carry contributions from **five distinct users**
+who can be **credited with one distinct venue each** — an assignment of
+founders to venues they rated, no two founders assigned the same venue. The
+founder is one of the five, not additional to them. A successful founding
+therefore covers at least as many venues as it has founders. If the bar is not
+met the request fails and no community is created: there is no partially
+founded state.
+
+> **Rule note.** This was first written as an exclusivity test — each founder
+> must introduce a venue *no other founder rated*. That reading is wrong, and
+> the reason is worth keeping. Within one atomic batch there is no ordering, so
+> "the venue X introduced" can only mean "the venue only X rated". A founder
+> who agreed with another founder's single venue would therefore strip that
+> founder of their claim and refuse the whole founding — punishing exactly the
+> agreement a taste community exists to express. Five founders who all rated
+> the same five venues fail an exclusivity test and pass a matching test, and
+> passing is right: five venues were still brought. The outcome the bar exists
+> for is unchanged either way.
 
 **Why one request and not five.** Five people submitting separately would mean
 the server holding the first four contributions while waiting for a fifth —
