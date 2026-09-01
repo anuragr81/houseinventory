@@ -25,9 +25,16 @@ test:
 # TEST_MYSQL_URL is set -- unset, those cases skip rather than fail. Dialects
 # disagree about things that look settled (see docs/01_STACK_DECISIONS.md), so
 # the dialect this deploys on is worth exercising before deploying on it.
+#
+# test_persistence_schema.py is included alongside test_persistence_repositories.py
+# because it carries test_migration_round_trips_on_mysql -- the migration
+# up/down/up cycle against MySQL. A migration whose SQLite rollback passes but
+# whose MySQL rollback fails outright (error 1553, an index still backing a
+# foreign key) has broken this twice already; that test is the guard, and it
+# is only reachable if this target actually runs it.
 test-mysql:
 	cd server && TEST_MYSQL_URL="$${TEST_MYSQL_URL:?set TEST_MYSQL_URL, e.g. mysql+pymysql://root:pass@127.0.0.1:3306/tastefinder}" \
-		.venv/bin/pytest tests/test_persistence_repositories.py
+		.venv/bin/pytest tests/test_persistence_repositories.py tests/test_persistence_schema.py
 
 lint:
 	cd server && .venv/bin/ruff check .
