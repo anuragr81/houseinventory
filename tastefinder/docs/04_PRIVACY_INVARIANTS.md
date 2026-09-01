@@ -206,6 +206,44 @@ built rather than where a contribution arrives.
 
 ---
 
+## Group AUTH — identity, and authorising on someone else's behalf
+
+Added when `docs/05_AUTH_DESIGN.md` settled how sign-in works and how five
+founders authorise one request. Both invariants protect properties the rest of
+this document already depends on.
+
+### `INV-AUTH-1` — The identity link holds no plaintext external identifier
+
+Google's `sub` is stored only as `HMAC-SHA256(server_pepper, sub)`, in a
+separate `identity_link` table holding nothing but that digest, a `user_id`,
+and a timestamp. No email, no name, no profile picture, no raw ID token. That
+table is never joined to rating data: it exists to answer "which account is
+this", never "what did this account rate".
+
+`User` stays pseudonymous because of this separation, which is exactly what
+its own docstring reserved — "a separate table with its own justification".
+
+*Test:* assert `identity_link` has no column for email, name, or a raw
+subject; assert no query joins it to `community_aggregate` or `facet_stat`;
+assert the stored value differs from the input `sub`.
+
+### `INV-AUTH-2` — A founding authorisation carries a hash, never a contribution
+
+`POST /founding-authorisations` receives a digest of the contribution being
+authorised, computed by the authorising user's own client. It must never
+receive, log, or store facet scores or free text.
+
+This is what preserves the property that made founding one atomic request in
+the first place: the server never holds four people's identified contributions
+while waiting for a fifth. If the issuance endpoint ever accepts a raw
+contribution "to compute the hash server-side", that property is gone and
+`INV-RAW-2` is back in play through a side door.
+
+*Test:* assert the issuance request model has no facet-score or free-text
+field; assert a founding token's payload contains no rating data.
+
+---
+
 ## Open — must be resolved before production
 
 These are **not yet invariants** because the underlying decisions are open. They

@@ -115,12 +115,14 @@ alone. One member collects the five and submits once. A single user cannot
 supply five entries: distinctness is established by the five authorisations, not
 by five payloads.
 
-> This is a hard constraint on a design that does not exist yet. Authentication
-> is deliberately unscaffolded (`docs/00_BOOTSTRAP.md`), and whatever it becomes
-> must be able to produce a per-user authorisation that a *different* user's
-> request can carry. That is unusual, and discovering it late would be
-> expensive. The authorisation's format, signing, and replay protection are
-> unspecified here and need their own pass.
+> **Now specified — see `docs/05_AUTH_DESIGN.md`.** Each founder calls
+> `POST /founding-authorisations` in their own session and receives an
+> HMAC-signed token binding `(user_id, contribution_hash, slug, expires_at)`.
+> Their client computes the hash locally and sends only the digest, so the
+> issuance endpoint never receives rating data at all; the contribution itself
+> reaches the server exactly once, in the founding request. Replay protection
+> comes from slug-binding rather than a nonce table — a replayed set of tokens
+> can only attempt the same slug, which `409`s once founded.
 
 **What is persisted, and what is not.** The five contributions go through the
 ordinary path — `RawContribution`, folded by `StreamingAggregator`, purged.

@@ -810,6 +810,87 @@ def test_INV_SCHEMA_2_scoreable_types_exclude_text() -> None:
     assert FacetValueType.NUMERIC in SCOREABLE_VALUE_TYPES
 
 
+# ══ Group AUTH ════════════════════════════════════════════════════════════════
+#
+# Nothing in docs/05_AUTH_DESIGN.md is built yet, so these are assertions of
+# absence in the sense docs/04 requires: they fail on the commit that
+# introduces the breach, rather than waiting to be written once the layer
+# exists. Each one is phrased so that it also holds -- and keeps meaning --
+# once the real thing lands.
+
+
+# Columns that could only be an external identity. Deliberately not a bare
+# "name": facet.name is a platform-authored facet label, which is a different
+# thing entirely and legitimately stored (INV-SCHEMA-1).
+FORBIDDEN_IDENTITY_COLUMNS = {
+    "email",
+    "email_address",
+    "full_name",
+    "given_name",
+    "family_name",
+    "picture",
+    "avatar_url",
+    "phone",
+    "phone_number",
+    "sub",
+    "subject",
+    "google_sub",
+    "id_token",
+    "access_token",
+    "refresh_token",
+}
+
+
+def test_INV_AUTH_1_no_table_holds_a_plaintext_external_identifier() -> None:
+    """Holds now because identity_link does not exist; holds later because a
+    correct one stores only a keyed digest."""
+    for name, table in Base.metadata.tables.items():
+        offending = set(table.columns.keys()) & FORBIDDEN_IDENTITY_COLUMNS
+        assert not offending, (
+            f"Table {name!r} holds a plaintext external identifier: {sorted(offending)}"
+        )
+
+
+def test_INV_AUTH_1_the_identity_link_is_never_joined_to_rating_data() -> None:
+    """An identity link answers 'which account is this', never 'what did it rate'."""
+    rating_tables = {"community_aggregate", "facet_stat"}
+    identity_tables = {
+        name for name in Base.metadata.tables if "identity" in name or "oauth" in name
+    }
+
+    for name in identity_tables:
+        foreign = {fk.column.table.name for fk in Base.metadata.tables[name].foreign_keys}
+        assert not (foreign & rating_tables), (
+            f"{name!r} references rating data: {sorted(foreign & rating_tables)}"
+        )
+
+    # And nothing on the rating side points back at it either.
+    for name in rating_tables & set(Base.metadata.tables):
+        foreign = {fk.column.table.name for fk in Base.metadata.tables[name].foreign_keys}
+        assert not (foreign & identity_tables)
+
+
+def test_INV_AUTH_2_no_authorisation_seam_accepts_a_contribution() -> None:
+    """The issuance endpoint takes a digest, never facet scores or free text.
+
+    Fails the moment somebody adds a function that both looks like the
+    authorisation-issuance seam and accepts rating data "to compute the hash
+    server-side" -- which would put INV-RAW-2 back in play through a side door.
+    """
+    rating_params = {"facet_scores", "free_text", "contribution", "contributions"}
+    offenders = []
+    for path, node in _all_function_defs():
+        name = node.name.lower()
+        if not ("authorisation" in name or "authorization" in name or "token" in name):
+            continue
+        params = {arg.arg for arg in node.args.args} | {
+            arg.arg for arg in node.args.kwonlyargs
+        }
+        if params & rating_params:
+            offenders.append((path.name, node.name, sorted(params & rating_params)))
+    assert offenders == [], f"Authorisation seam accepts rating data: {offenders}"
+
+
 # ══ The rule this file must keep about itself ═════════════════════════════════
 
 
