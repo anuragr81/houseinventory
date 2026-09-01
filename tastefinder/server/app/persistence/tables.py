@@ -14,7 +14,8 @@ native UUID on PostgreSQL and CHAR(32) on SQLite, so the same schema serves
 tests and deployment.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -25,6 +26,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    TypeDecorator,
     Uuid,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -36,6 +38,42 @@ from app.domain.enums import (
     ImportJobState,
     Tier,
 )
+
+
+class UtcDateTime(TypeDecorator[datetime]):
+    """A timezone-aware datetime that survives the round trip on SQLite too.
+
+    SQLite has no native datetime type, so `DateTime(timezone=True)` writes an
+    aware value and reads back a **naive** one. That is not cosmetic: comparing
+    a naive stored timestamp with an aware `now` raises TypeError, which is
+    exactly what `PlaceRef.needs_refresh` and `ConsentRecord.is_active` do the
+    moment their inputs come from the database. PostgreSQL has no such
+    problem, so without this the two dialects disagree about a core domain
+    type and the disagreement only shows up wherever the schema is not the one
+    the tests ran against.
+
+    Naive values are rejected on the way in rather than assumed to be UTC:
+    there is no way to know what zone an unlabelled timestamp meant, and
+    guessing produces data that looks fine and is wrong.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError(
+                "Naive datetime passed to a UtcDateTime column. Attach a timezone "
+                "at the point the value is created; this layer will not guess one."
+            )
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is None:
+            return None
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 class Base(DeclarativeBase):
@@ -53,7 +91,7 @@ class UserTable(Base):
     __tablename__ = "user"
 
     user_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class CommunityTable(Base):
@@ -67,7 +105,7 @@ class CommunityTable(Base):
     status: Mapped[CommunityStatus] = mapped_column(
         Enum(CommunityStatus, native_enum=False, length=16), nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
     facets: Mapped[list["FacetTable"]] = relationship(
         back_populates="community", cascade="all, delete-orphan", passive_deletes=True
@@ -85,7 +123,7 @@ class CommunityMembershipTable(Base):
         Uuid, ForeignKey("community.community_id", ondelete="CASCADE"), nullable=False, index=True
     )
     tier: Mapped[Tier] = mapped_column(Enum(Tier, native_enum=False, length=16), nullable=False)
-    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class FacetTable(Base):
@@ -124,9 +162,9 @@ class ConsentRecordTable(Base):
     scope: Mapped[ConsentScope] = mapped_column(
         Enum(ConsentScope, native_enum=False, length=32), nullable=False
     )
-    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
 class GoogleImportJobTable(Base):
@@ -149,10 +187,10 @@ class GoogleImportJobTable(Base):
     state: Mapped[ImportJobState] = mapped_column(
         Enum(ImportJobState, native_enum=False, length=16), nullable=False
     )
-    initiated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    initiated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     signed_url_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UtcDateTime(), nullable=True
     )
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -168,11 +206,11 @@ class PlaceRefTable(Base):
     __tablename__ = "place_ref"
 
     place_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    last_refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_refreshed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     cached_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     cached_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     coords_cached_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UtcDateTime(), nullable=True
     )
 
 
@@ -192,7 +230,7 @@ class CommunityAggregateTable(Base):
         String(255), ForeignKey("place_ref.place_id", ondelete="RESTRICT"), nullable=False
     )
     cohort_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     noise_epsilon: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     facet_stats: Mapped[list["FacetStatTable"]] = relationship(
