@@ -9,11 +9,13 @@ requires that "MUST NOT exist" is tested rather than merely not-yet-built, and
 the persistence layer is where that goes wrong first.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect
+import pytest
+from sqlalchemy import create_engine, inspect, text
 
 from app.persistence.tables import Base
 
@@ -116,6 +118,54 @@ def test_migration_applies_and_rolls_back(tmp_path: Path) -> None:
     remaining = set(inspect(engine).get_table_names())
     engine.dispose()
     assert remaining <= {"alembic_version"}
+
+
+def test_migration_round_trips_on_mysql() -> None:
+    """The same up/down/up cycle, against the dialect this deploys on.
+
+    The SQLite test above cannot catch the failure that matters here. Alembic
+    autogenerates a `DROP INDEX` before each `DROP TABLE`; SQLite accepts
+    that, and MySQL refuses it whenever the index still backs a foreign key
+    (error 1553, "needed in a foreign key constraint"). That divergence has
+    now broken a downgrade twice -- once in the initial migration and again
+    in the identity-link one -- because nothing exercised rollback on MySQL.
+    This is that thing.
+
+    Skips without TEST_MYSQL_URL, like the rest of the MySQL coverage.
+    """
+    url = os.environ.get("TEST_MYSQL_URL")
+    if not url:
+        pytest.skip("TEST_MYSQL_URL not set; skipping the MySQL migration round trip")
+
+    def alembic(*args: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-x", f"url={url}", *args],
+            cwd=SERVER_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    # Start from genuinely nothing. This database is shared with the
+    # repository suite, which builds its schema with create_all() rather than
+    # Alembic -- so `downgrade base` alone would find no alembic_version, do
+    # nothing, and leave tables that the following upgrade then collides with.
+    engine = create_engine(url)
+    Base.metadata.drop_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    engine.dispose()
+
+    alembic("upgrade", "head")
+
+    engine = create_engine(url)
+    migrated = set(inspect(engine).get_table_names()) - {"alembic_version"}
+    engine.dispose()
+    assert migrated == set(Base.metadata.tables)
+
+    # The half that actually regressed: rollback, then forward again.
+    alembic("downgrade", "base")
+    alembic("upgrade", "head")
 
 
 def test_migration_matches_the_models(tmp_path: Path) -> None:
