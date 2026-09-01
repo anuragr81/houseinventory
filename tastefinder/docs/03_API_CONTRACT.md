@@ -41,17 +41,19 @@ else is still specification only, per the bootstrap phasing.
 ```
 POST /communities
      body: {slug, min_cohort_threshold, facet_keys: [string],
-            foundings: [{authorisation, place_id, facet_scores, free_text?}, ...]}
+            contributions: [{place_id, facet_scores, free_text?}, ...]}
      → 201 {community_id, slug, status}
+     → 401 if not signed in.
      → 409 if the slug is taken.
-     → 422 if the founding group does not meet the bar below.
+     → 422 if the batch does not meet the bar below.
 
+     An ordinary authenticated request: the founder is the session's user.
      facet_keys selects from the platform's facet catalogue; a founder cannot
-     author a facet name (INV-SCHEMA-1). facet_scores in each founding entry
-     are keyed by the same catalogue keys, not by facet_id -- facet ids do not
-     exist until founding creates them.
+     author a facet name (INV-SCHEMA-1). facet_scores are keyed by the same
+     catalogue keys, not by facet_id -- facet ids do not exist until founding
+     creates them.
 
-     Founding is a single atomic act by a group. See "Founding a community".
+     Atomic: see "Founding a community".
 
 GET  /facets  [implemented]
      → 200 [{key, name, value_type, scale_min, scale_max}]
@@ -83,58 +85,49 @@ is defining the taste the community will aggregate around, so founding requires
 demonstrating that taste rather than asserting it. There is **no human approval
 step** — the filter is effort, not permission.
 
-**The bar.** One request must carry contributions from **five distinct users**
-who can be **credited with one distinct venue each** — an assignment of
-founders to venues they rated, no two founders assigned the same venue. The
-founder is one of the five, not additional to them. A successful founding
-therefore covers at least as many venues as it has founders. If the bar is not
-met the request fails and no community is created: there is no partially
+**The bar.** One request must carry ratings for at least **five distinct
+venues**, contributed by the founder. Distinct *venues*, not contributions:
+rating the same place five times is not knowing five places. If the bar is not
+met the request fails and no community is created — there is no partially
 founded state.
 
-> **Rule note.** This was first written as an exclusivity test — each founder
-> must introduce a venue *no other founder rated*. That reading is wrong, and
-> the reason is worth keeping. Within one atomic batch there is no ordering, so
-> "the venue X introduced" can only mean "the venue only X rated". A founder
-> who agreed with another founder's single venue would therefore strip that
-> founder of their claim and refuse the whole founding — punishing exactly the
-> agreement a taste community exists to express. Five founders who all rated
-> the same five venues fail an exclusivity test and pass a matching test, and
-> passing is right: five venues were still brought. The outcome the bar exists
-> for is unchanged either way.
+> **Rule history, kept because the reasoning matters.** Founding originally
+> required **five distinct users**, each creditable with a distinct venue, all
+> authorising a single atomic request. That rule was dropped, and the reason it
+> was wrong is worth keeping.
+>
+> It was meant to buy bot resistance, and it did not. Five authorisations prove
+> five *accounts*, not five *people* — one person with five Google accounts
+> satisfied every check in it. Meanwhile it cost a great deal: four other
+> people each had to install the app and complete sign-in *before the community
+> existed at all*, with nothing yet to show them and no way to preview what
+> they were joining. It was a large, unavoidable barrier on the critical path
+> to any community existing, paying for a property it never actually delivered.
+>
+> The effort filter survives the change. One person rating five venues
+> demonstrates a coherent taste at least as well as five people each rating
+> one — arguably better, since five people who each know one place is weaker
+> evidence of a shared taste than one person who knows five.
+>
+> Dropping it also removed a whole subsystem: the joint-authorisation
+> mechanism in `docs/05_AUTH_DESIGN.md` (token issuance, HMAC format,
+> client-side hash canonicalisation, slug-bound replay analysis) existed
+> **solely** to let five people authorise one request. Founding is now an
+> ordinary authenticated `POST`.
 
-**Why one request and not five.** Five people submitting separately would mean
-the server holding the first four contributions while waiting for a fifth —
-`user_id` beside `facet_scores`, persisted for however long the group takes.
-That is precisely the structure `INV-RAW-2` forbids and the Phase 2 decision in
-`docs/02_DOMAIN_MODEL.md` rejected. Requiring the group to submit together
-removes the wait, and with it the store.
+**What this leaves unguarded, stated plainly.** There is now no point anywhere
+in the platform where multiple distinct humans are structurally required. One
+actor can found a community alone and, because `cohort_size` counts
+contributions rather than contributors, raise a venue past its threshold by
+contributing repeatedly. That was already true (`OPEN-7`), but the five-founder
+rule was an incidental speed bump in front of it. Removing the bump does not
+create the hole; it makes `OPEN-6` and `OPEN-7` load-bearing rather than
+theoretical.
 
-**Joint authorisation.** Each entry in `foundings` carries its own
-`authorisation`, produced by that user's client and attributable to that user
-alone. One member collects the five and submits once. A single user cannot
-supply five entries: distinctness is established by the five authorisations, not
-by five payloads.
-
-> **Now specified — see `docs/05_AUTH_DESIGN.md`.** Each founder calls
-> `POST /founding-authorisations` in their own session and receives an
-> HMAC-signed token binding `(user_id, contribution_hash, slug, expires_at)`.
-> Their client computes the hash locally and sends only the digest, so the
-> issuance endpoint never receives rating data at all; the contribution itself
-> reaches the server exactly once, in the founding request. Replay protection
-> comes from slug-binding rather than a nonce table — a replayed set of tokens
-> can only attempt the same slug, which `409`s once founded.
-
-**What is persisted, and what is not.** The five contributions go through the
-ordinary path — `RawContribution`, folded by `StreamingAggregator`, purged.
+**What is persisted, and what is not.** The founding contributions go through
+the ordinary path — `RawContribution`, folded by `StreamingAggregator`, purged.
 There is no founder-specific ingestion route, because a second path for
 identified data is exactly what the invariants exist to prevent.
-
-The venue-credit check runs **in flight**, against the batch, before anything
-is folded. Which founder was credited with which venue is never written down:
-the assignment exists only for the length of the request and evaporates with
-the `RawContribution` objects. Enforcing the rule therefore costs nothing in
-retention, which it would not if founders were allowed to arrive one at a
-time.
 
 **Facets are selected, not written.** A founding request carries `facet_keys`
 naming entries in the platform's catalogue (`GET /facets`); the community's
@@ -154,8 +147,8 @@ and published. That surface is far smaller and structurally constrained, and it
 is why an operational takedown channel is still needed — recorded as `OPEN-8`.
 
 **Tier is set by how a member arrived, not by the community's status.** The
-five in the founding request receive `FOUNDER`. Everyone who joins afterwards
-receives `JOINER`, whether the community is `SEEDING` or `LIVE`.
+founder receives `FOUNDER`. Everyone who joins afterwards receives `JOINER`,
+whether the community is `SEEDING` or `LIVE`.
 
 This is a change from an earlier draft, which assigned tier by status
 (`SEEDING → FOUNDER`). That rule predates the decision that founding is a
@@ -185,18 +178,17 @@ exact score from the change in the mean — the differencing attack in `OPEN-2`,
 which needs no knowledge of who the contributors are. Pseudonymity does not
 defend against it; only the threshold does.
 
-**Open parameters.** The founding minimum is currently five distinct users and
-five venues. It is a starting value, not a derived one, and it is **not** the
-same number as `min_cohort_threshold` (`OPEN-1`) — one governs what it takes to
-start a community, the other what it takes to publish a venue's rating. Both are
-the owner's to set.
+**Open parameters.** The founding minimum is currently five distinct venues. It
+is a starting value, not a derived one, and it is **not** the same number as
+`min_cohort_threshold` (`OPEN-1`) — one governs what it takes to start a
+community, the other what it takes to publish a venue's rating. Both are the
+owner's to set.
 
-**What five distinct users does and does not guarantee.** It guarantees five
-distinct accounts. Whether those are five distinct people is `OPEN-6`
-(bot/Sybil resistance), which is deferred platform-wide and which founding does
-not solve on its own. The intent is five people; the verification is not
-available yet, and this bar should not be described as an anti-Sybil control
-until it is.
+**The bar is an effort filter and nothing more.** It says the founder has
+opinions about five places. It says nothing about whether they are a real
+person, a distinct person, or acting alone — that is `OPEN-6`, deferred
+platform-wide, and founding no longer pretends to contribute to it. Do not
+describe this bar as an anti-Sybil control.
 
 ### Membership
 

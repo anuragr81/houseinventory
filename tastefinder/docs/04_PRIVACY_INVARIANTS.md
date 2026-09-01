@@ -208,9 +208,9 @@ built rather than where a contribution arrives.
 
 ## Group AUTH — identity, and authorising on someone else's behalf
 
-Added when `docs/05_AUTH_DESIGN.md` settled how sign-in works and how five
-founders authorise one request. Both invariants protect properties the rest of
-this document already depends on.
+Added when `docs/05_AUTH_DESIGN.md` settled how sign-in works. A second
+invariant here (`INV-AUTH-2`) covered founding authorisation tokens and was
+removed with them, when founding stopped requiring five distinct users.
 
 ### `INV-AUTH-1` — The identity link holds no plaintext external identifier
 
@@ -226,21 +226,6 @@ its own docstring reserved — "a separate table with its own justification".
 *Test:* assert `identity_link` has no column for email, name, or a raw
 subject; assert no query joins it to `community_aggregate` or `facet_stat`;
 assert the stored value differs from the input `sub`.
-
-### `INV-AUTH-2` — A founding authorisation carries a hash, never a contribution
-
-`POST /founding-authorisations` receives a digest of the contribution being
-authorised, computed by the authorising user's own client. It must never
-receive, log, or store facet scores or free text.
-
-This is what preserves the property that made founding one atomic request in
-the first place: the server never holds four people's identified contributions
-while waiting for a fifth. If the issuance endpoint ever accepts a raw
-contribution "to compute the hash server-side", that property is gone and
-`INV-RAW-2` is back in play through a side door.
-
-*Test:* assert the issuance request model has no facet-score or free-text
-field; assert a founding token's payload contains no rating data.
 
 ---
 
@@ -290,8 +275,15 @@ made with each other in view, not independently.
 
 ### `OPEN-7` — `cohort_size` counts contributions, not contributors
 
-Surfaced while implementing the aggregator in Phase 3, and recorded here rather
-than decided.
+Surfaced while implementing the aggregator in Phase 3, recorded rather than
+decided — and **materially more urgent since founding stopped requiring five
+distinct users.** That rule was never the bot defence it was taken for, but it
+did mean a community began life with five accounts behind it. With solo
+founding there is no point anywhere in the platform where multiple distinct
+humans are structurally required, so a single actor can now found a community
+and drive one of its venues past the publication threshold without anyone
+else's involvement. Nothing below changed; what changed is that nothing else
+stands in front of it.
 
 `StreamingAggregator.fold` increments `cohort_size` once per contribution. It
 does **not** de-duplicate by contributor, because it cannot: telling a repeat

@@ -85,17 +85,16 @@ def client(factory: sessionmaker[Session]) -> Iterator[TestClient]:
 
 def _found_and_persist(factory: sessionmaker[Session], slug: str) -> None:
     """A minimal valid founding, written to the test database."""
+    founder_id = uuid4()
     batch = [
-        FoundingContribution(
-            user_id=uuid4(), place_id=f"place-{index}", facet_scores={"body": 4.0}
-        )
+        FoundingContribution(place_id=f"place-{index}", facet_scores={"body": 4.0})
         for index in range(5)
     ]
-    result = found_community(slug, 10, frozenset({"body"}), CATALOGUE, batch, NOW)
+    result = found_community(
+        slug, 10, frozenset({"body"}), CATALOGUE, founder_id, batch, NOW
+    )
     with transaction(factory) as session:
-        users = UserRepository(session)
-        for contribution in batch:
-            users.add(User(user_id=contribution.user_id, created_at=NOW))
+        UserRepository(session).add(User(user_id=founder_id, created_at=NOW))
     with transaction(factory) as session:
         persist_founding(session, result, NOW)
 

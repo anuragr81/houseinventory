@@ -24,17 +24,17 @@ from app.domain.facet_catalogue import (
 )
 from app.services.aggregation import InvalidScoreError
 from app.services.community_founding import (
-    FOUNDING_MINIMUM_USERS,
+    FOUNDING_MINIMUM_VENUES,
     FoundingContribution,
     FoundingResult,
-    InsufficientDistinctVenuesError,
-    InsufficientFoundersError,
+    InsufficientVenuesError,
     UnsafeThresholdError,
     UnscoredFacetError,
     found_community,
 )
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+FOUNDER = uuid4()
 
 # The platform owns the vocabulary; a test owns this one. There is no default
 # catalogue, deliberately -- see app/domain/facet_catalogue.py.
@@ -59,230 +59,154 @@ CATALOGUE = FacetCatalogue(
 FACET_KEYS = frozenset({"body"})
 
 
-def _contribution(
-    user_id: UUID, place_id: str, score: float = 4.0, free_text: str | None = None
-) -> FoundingContribution:
-    return FoundingContribution(
-        user_id=user_id,
-        place_id=place_id,
-        facet_scores={"body": score},
-        free_text=free_text,
-    )
-
-
 def _facet_id(result: FoundingResult, key: str) -> UUID:
     """The id the catalogue key became for this community."""
     name = next(d.name for d in CATALOGUE.definitions if d.key == key)
     return next(facet.facet_id for facet in result.facets if facet.name == name)
 
 
-def _valid_batch(count: int = FOUNDING_MINIMUM_USERS) -> list[FoundingContribution]:
-    """`count` founders, each introducing one venue nobody else rated."""
-    return [_contribution(uuid4(), f"place-{index}") for index in range(count)]
+def _contribution(
+    place_id: str, score: float = 4.0, free_text: str | None = None
+) -> FoundingContribution:
+    return FoundingContribution(
+        place_id=place_id, facet_scores={"body": score}, free_text=free_text
+    )
+
+
+def _valid_batch(venues: int = FOUNDING_MINIMUM_VENUES) -> list[FoundingContribution]:
+    return [_contribution(f"place-{index}") for index in range(venues)]
+
+
+def _found(
+    batch: list[FoundingContribution],
+    slug: str = "wine",
+    threshold: int = 10,
+    keys: frozenset[str] = FACET_KEYS,
+) -> FoundingResult:
+    return found_community(slug, threshold, keys, CATALOGUE, FOUNDER, batch, NOW)
 
 
 # ── The happy path ────────────────────────────────────────────────────────────
 
 
 def test_a_valid_batch_founds_a_community() -> None:
-    batch = _valid_batch()
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+    result = _found(_valid_batch())
 
     assert result.community.slug == "wine"
     assert result.community.min_cohort_threshold == 10
     assert result.community.created_at == NOW
 
 
-def test_every_founder_becomes_a_founder_tier_member() -> None:
-    batch = _valid_batch()
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+def test_the_founder_becomes_the_sole_founder_tier_member() -> None:
+    result = _found(_valid_batch())
 
-    assert len(result.memberships) == FOUNDING_MINIMUM_USERS
-    assert {m.user_id for m in result.memberships} == {c.user_id for c in batch}
-    assert all(m.tier is Tier.FOUNDER for m in result.memberships)
-    assert all(m.community_id == result.community.community_id for m in result.memberships)
+    assert len(result.memberships) == 1
+    membership = result.memberships[0]
+    assert membership.user_id == FOUNDER
+    assert membership.tier is Tier.FOUNDER
+    assert membership.community_id == result.community.community_id
 
 
 def test_one_aggregate_per_venue_all_pointing_at_the_new_community() -> None:
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, _valid_batch(), NOW)
+    result = _found(_valid_batch())
 
-    assert set(result.aggregates) == {f"place-{i}" for i in range(FOUNDING_MINIMUM_USERS)}
+    assert set(result.aggregates) == {
+        f"place-{i}" for i in range(FOUNDING_MINIMUM_VENUES)
+    }
     assert all(
         aggregate.community_id == result.community.community_id
         for aggregate in result.aggregates.values()
     )
-    # One founder rated each venue, so each aggregate holds exactly one.
+    # The founder rated each venue once, so each aggregate holds exactly one.
     assert all(aggregate.cohort_size == 1 for aggregate in result.aggregates.values())
 
 
-def test_a_venue_several_founders_rated_accumulates_all_of_them() -> None:
+def test_rating_one_venue_more_than_once_accumulates_on_that_venue() -> None:
+    """Permitted, and exactly the shape OPEN-7 warns about: cohort_size counts
+    contributions, so one person can raise it without help."""
     batch = _valid_batch()
-    shared = "place-shared"
-    batch += [_contribution(batch[i].user_id, shared, score=float(i)) for i in range(3)]
+    batch += [_contribution("place-0", score=float(n)) for n in range(3)]
 
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+    result = _found(batch)
 
-    assert result.aggregates[shared].cohort_size == 3
-    assert result.aggregates[shared].facet_stats[_facet_id(result, "body")].n == 3
-    body = _facet_id(result, "body")
-    assert result.aggregates[shared].facet_stats[body].mean == pytest.approx(1.0)
+    assert result.aggregates["place-0"].cohort_size == 4
+    assert result.aggregates["place-0"].facet_stats[_facet_id(result, "body")].n == 4
 
 
-def test_more_founders_than_the_minimum_is_allowed() -> None:
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, _valid_batch(count=8), NOW)
-    assert len(result.memberships) == 8
+def test_more_venues_than_the_minimum_is_allowed() -> None:
+    result = _found(_valid_batch(venues=9))
+    assert len(result.aggregates) == 9
 
 
 # ── Status is about scale, not tier ───────────────────────────────────────────
 
 
-def test_a_founding_group_below_its_own_threshold_starts_seeding() -> None:
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, _valid_batch(), NOW)
+def test_a_new_community_starts_seeding() -> None:
+    result = _found(_valid_batch(), threshold=10)
     assert result.community.status is CommunityStatus.SEEDING
 
 
-def test_a_founding_group_that_clears_its_own_threshold_starts_live() -> None:
-    result = found_community("wine", ABSOLUTE_MIN := 5, FACET_KEYS, CATALOGUE, _valid_batch(), NOW)
-    assert ABSOLUTE_MIN == FOUNDING_MINIMUM_USERS
-    assert result.community.status is CommunityStatus.LIVE
+def test_a_founding_of_one_does_not_clear_even_the_lowest_legal_threshold() -> None:
+    """One founder is a cohort of one, and the floor is two (INV-EXPOSE-1)."""
+    result = _found(_valid_batch(), threshold=2)
+    assert result.community.status is CommunityStatus.SEEDING
 
 
 # ── The bar ───────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("count", [0, 1, 4])
-def test_too_few_distinct_founders_is_refused(count: int) -> None:
-    with pytest.raises(InsufficientFoundersError):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, _valid_batch(count=count), NOW)
+@pytest.mark.parametrize("venues", [0, 1, 4])
+def test_too_few_distinct_venues_is_refused(venues: int) -> None:
+    with pytest.raises(InsufficientVenuesError):
+        _found(_valid_batch(venues=venues))
 
 
-def test_one_person_submitting_five_venues_is_not_five_founders() -> None:
-    """The bar counts distinct people, not contributions."""
-    solo = uuid4()
-    batch = [_contribution(solo, f"place-{index}") for index in range(5)]
+def test_rating_one_venue_five_times_is_not_five_venues() -> None:
+    """The bar counts distinct places, not contributions."""
+    batch = [_contribution("the-only-place", score=float(n)) for n in range(5)]
 
-    with pytest.raises(InsufficientFoundersError):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
-
-
-def test_a_founder_who_brought_no_new_venue_is_refused() -> None:
-    """Six founders sharing five venues: someone cannot be credited."""
-    batch = _valid_batch()
-    freeloader = uuid4()
-    batch += [_contribution(freeloader, "place-0"), _contribution(freeloader, "place-1")]
-
-    with pytest.raises(InsufficientDistinctVenuesError):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+    with pytest.raises(InsufficientVenuesError):
+        _found(batch)
 
 
-def test_a_founder_may_also_rate_a_venue_someone_else_rated() -> None:
-    batch = _valid_batch()
-    batch.append(_contribution(batch[0].user_id, "place-shared"))
-    batch.append(_contribution(batch[1].user_id, "place-shared"))
-
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
-
-    assert len(result.memberships) == FOUNDING_MINIMUM_USERS
-    assert result.aggregates["place-shared"].cohort_size == 2
-
-
-def test_agreeing_with_another_founders_only_venue_does_not_refuse_the_founding() -> None:
-    """The reason the rule is a matching and not an exclusivity test.
-
-    place-1 is founder 1's only venue, and founder 0 rates it too. Under an
-    exclusivity reading founder 1 would lose their claim and the whole
-    founding would be refused for an act of agreement. Under the matching
-    reading founder 0 is credited with place-0 and founder 1 keeps place-1.
-    """
-    batch = _valid_batch()
-    batch.append(_contribution(batch[0].user_id, "place-1"))
-
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
-
-    assert len(result.memberships) == FOUNDING_MINIMUM_USERS
-    assert result.aggregates["place-1"].cohort_size == 2
-
-
-def test_five_founders_who_all_rated_the_same_five_venues_can_be_credited() -> None:
-    """Total overlap is fine: an assignment still exists."""
-    founders = [uuid4() for _ in range(5)]
-    batch = [
-        _contribution(founder, f"place-{index}")
-        for founder in founders
-        for index in range(5)
-    ]
-
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
-
-    assert len(result.memberships) == 5
-    assert len(result.aggregates) == 5
-    assert all(aggregate.cohort_size == 5 for aggregate in result.aggregates.values())
-
-
-def test_five_founders_all_rating_the_same_single_venue_is_refused() -> None:
-    """Five people and one venue cannot be five distinct credits."""
-    batch = [_contribution(uuid4(), "the-only-place") for _ in range(5)]
-
-    with pytest.raises(InsufficientDistinctVenuesError):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
-
-
-def test_a_successful_founding_always_covers_at_least_one_venue_per_founder() -> None:
-    """The outcome the bar exists for, whichever reading produced it."""
-    batch = _valid_batch(count=7)
-    batch.append(_contribution(batch[0].user_id, "place-1"))
-
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
-
-    assert len(result.aggregates) >= len(result.memberships)
+def test_exactly_the_minimum_is_enough() -> None:
+    result = _found(_valid_batch(venues=FOUNDING_MINIMUM_VENUES))
+    assert len(result.aggregates) == FOUNDING_MINIMUM_VENUES
 
 
 @pytest.mark.parametrize("threshold", [-1, 0, 1])
 def test_a_threshold_below_the_individual_floor_is_refused(threshold: int) -> None:
     """A cohort of one is an individual (INV-EXPOSE-1)."""
     with pytest.raises(UnsafeThresholdError):
-        found_community("wine", threshold, FACET_KEYS, CATALOGUE, _valid_batch(), NOW)
+        _found(_valid_batch(), threshold=threshold)
 
 
 # ── Nothing half-founded ──────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    ("batch_factory", "expected"),
-    [
-        (lambda: _valid_batch(count=3), InsufficientFoundersError),
-        (
-            lambda: [_contribution(uuid4(), "same") for _ in range(5)],
-            InsufficientDistinctVenuesError,
-        ),
-    ],
-)
-def test_a_structurally_invalid_batch_is_rejected_before_anything_is_folded(
-    batch_factory: object, expected: type[Exception]
-) -> None:
-    """The likely failures cost nothing: the batch is still intact afterwards."""
-    batch = batch_factory()  # type: ignore[operator]
+def test_a_structurally_invalid_batch_is_rejected_before_anything_is_folded() -> None:
+    """The likely failure costs nothing: the batch is still intact afterwards."""
+    batch = _valid_batch(venues=3)
 
-    with pytest.raises(expected):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+    with pytest.raises(InsufficientVenuesError):
+        _found(batch)
 
-    # FoundingContribution is frozen and never handed to the aggregator on
-    # these paths, so the caller's data is untouched and the attempt can be
-    # corrected and retried.
+    # FoundingContribution is frozen and never reaches the aggregator on this
+    # path, so the caller's data is untouched and the attempt can be retried.
     assert all(contribution.facet_scores for contribution in batch)
 
 
 def test_a_non_finite_score_produces_no_community() -> None:
     batch = _valid_batch()
-    batch.append(_contribution(batch[0].user_id, "place-0", score=float("nan")))
+    batch.append(_contribution("place-0", score=float("nan")))
 
     with pytest.raises(InvalidScoreError):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+        _found(batch)
 
 
 def test_the_result_carries_no_contribution_shaped_object() -> None:
     """Only membership may carry a user_id; aggregates never do (INV-RAW-2)."""
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, _valid_batch(), NOW)
+    result = _found(_valid_batch())
 
     for aggregate in result.aggregates.values():
         dumped = aggregate.model_dump()
@@ -293,11 +217,9 @@ def test_the_result_carries_no_contribution_shaped_object() -> None:
 
 def test_free_text_never_reaches_the_aggregates() -> None:
     batch = _valid_batch()
-    batch[0] = _contribution(
-        batch[0].user_id, batch[0].place_id, free_text="ZZQX-distinctive-marker"
-    )
+    batch[0] = _contribution(batch[0].place_id, free_text="ZZQX-distinctive-marker")
 
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+    result = _found(batch)
 
     assert "ZZQX-distinctive-marker" not in str(result.aggregates)
     assert "ZZQX-distinctive-marker" not in str(result.community)
@@ -307,9 +229,7 @@ def test_free_text_never_reaches_the_aggregates() -> None:
 
 
 def test_founding_creates_a_facet_per_selected_key() -> None:
-    result = found_community(
-        "wine", 10, frozenset({"body", "finish"}), CATALOGUE, _valid_batch(), NOW
-    )
+    result = _found(_valid_batch(), keys=frozenset({"body", "finish"}))
 
     assert {facet.name for facet in result.facets} == {"Body", "Finish"}
     assert all(f.community_id == result.community.community_id for f in result.facets)
@@ -317,26 +237,21 @@ def test_founding_creates_a_facet_per_selected_key() -> None:
 
 def test_facet_names_come_from_the_catalogue_not_the_request() -> None:
     """A founder selects; they cannot author a name."""
-    result = found_community("wine", 10, FACET_KEYS, CATALOGUE, _valid_batch(), NOW)
+    result = _found(_valid_batch())
 
     assert [facet.name for facet in result.facets] == ["Body"]
-    assert all(facet.name in {"Body", "Finish"} for facet in result.facets)
 
 
 def test_a_key_outside_the_catalogue_is_refused() -> None:
     with pytest.raises(UnknownFacetKeyError):
-        found_community(
-            "wine", 10, frozenset({"invented"}), CATALOGUE, _valid_batch(), NOW
-        )
+        _found(_valid_batch(), keys=frozenset({"invented"}))
 
 
 def test_scoring_a_facet_the_community_did_not_select_is_refused() -> None:
     batch = _valid_batch()
     batch[0] = FoundingContribution(
-        user_id=batch[0].user_id,
-        place_id=batch[0].place_id,
-        facet_scores={"finish": 4.0},  # not among FACET_KEYS
+        place_id=batch[0].place_id, facet_scores={"finish": 4.0}
     )
 
     with pytest.raises(UnscoredFacetError):
-        found_community("wine", 10, FACET_KEYS, CATALOGUE, batch, NOW)
+        _found(batch)

@@ -3,19 +3,27 @@ app/services/community_founding.py
 -----------------------------------
 Deciding whether a community may be founded, and folding the founding batch.
 
-`docs/03_API_CONTRACT.md`, "Founding a community": one request carries
-contributions from five distinct users, each introducing at least one venue no
-other member of the group introduced. This module is that decision plus the
-fold, at the same layer as the rest of the services (`aggregation.py`,
-`privacy_gate.py`, `consent.py`) -- pure domain logic, no database session, no
-route.
+`docs/03_API_CONTRACT.md`, "Founding a community": one person founds a
+community by contributing ratings for at least `FOUNDING_MINIMUM_VENUES`
+distinct venues. This module is that decision plus the fold, at the same layer
+as the rest of the services (`aggregation.py`, `privacy_gate.py`,
+`consent.py`) -- pure domain logic, no database session, no route.
 
-A route needs a way to know that five authorisations really do belong to five
-distinct users, and that is an authentication design which does not exist yet
-(`docs/00_BOOTSTRAP.md`'s exclusion list). This module takes that as already
-established and receives plain `user_id`s, the same way
-`consent.authorise_google_import` takes `age_verified_adult` as a parameter
-rather than solving age verification itself.
+**Founding used to require five distinct people, and no longer does.** The
+rule was meant to buy bot resistance and did not: five authorisations prove
+five *accounts*, not five people, and one person with five accounts satisfied
+every check. It cost a great deal -- four other people each had to install the
+app and sign in before the community existed at all -- for a property it never
+actually delivered. The effort filter survives the change: one person rating
+five venues demonstrates a coherent taste at least as well as five people each
+rating one.
+
+What that leaves unguarded is written down rather than glossed. There is now
+no point anywhere in the platform where multiple distinct humans are
+structurally required, which makes `OPEN-6` (Sybil resistance) and `OPEN-7`
+(`cohort_size` counts contributions, not contributors) load-bearing rather
+than theoretical: alone, one actor can found a community and, with repeated
+contributions, push a venue past its threshold.
 
 **Atomicity, and what it does and does not protect.** A rejected founding
 creates nothing: no community, no orphaned membership, no half-built
@@ -24,10 +32,9 @@ themselves. `StreamingAggregator.fold` purges every contribution it touches,
 on success and on failure alike, so a batch that fails partway through folding
 has already scrubbed what it folded before failing. That is the cost Phase 3
 accepted for a single contribution, extended to a batch, and it is why the
-structural checks below run *before* anything is folded: the failure modes
-that are actually likely -- too few founders, a founder with no venue of their
-own -- cost nothing, because they are caught while the batch is still just
-data.
+structural checks below run *before* anything is folded: the likely failure
+modes -- too few venues, a facet the community does not rate -- cost nothing,
+because they are caught while the batch is still just data.
 """
 
 from collections.abc import Sequence
@@ -47,12 +54,13 @@ from app.domain.models import (
 from app.services.aggregation import StreamingAggregator
 from app.services.privacy_gate import ABSOLUTE_MINIMUM_THRESHOLD
 
-# A starting value, not a derived one -- see "Open parameters" under "Founding
-# a community" in docs/03_API_CONTRACT.md. Deliberately *not* the same number
-# as a community's own min_cohort_threshold (OPEN-1 in
-# docs/04_PRIVACY_INVARIANTS.md): this governs what it takes to start a
-# community, that governs what it takes to publish a single venue's rating.
-FOUNDING_MINIMUM_USERS = 5
+# How many distinct venues a founding must cover. A starting value, not a
+# derived one -- see "Open parameters" under "Founding a community" in
+# docs/03_API_CONTRACT.md. Deliberately *not* the same number as a community's
+# own min_cohort_threshold (OPEN-1 in docs/04_PRIVACY_INVARIANTS.md): this
+# governs what it takes to start a community, that governs what it takes to
+# publish a single venue's rating.
+FOUNDING_MINIMUM_VENUES = 5
 
 
 class FoundingError(Exception):
@@ -65,30 +73,12 @@ class FoundingError(Exception):
     """
 
 
-class InsufficientFoundersError(FoundingError):
-    """Fewer than `FOUNDING_MINIMUM_USERS` distinct users in the batch."""
+class InsufficientVenuesError(FoundingError):
+    """The batch covers fewer than `FOUNDING_MINIMUM_VENUES` distinct venues.
 
-
-class InsufficientDistinctVenuesError(FoundingError):
-    """The group cannot be credited with one distinct venue each.
-
-    The rule is a matching, not an exclusivity test: founding succeeds when
-    every founder can be *assigned* a venue they rated, with no two founders
-    assigned the same one. Overlap is fine -- five founders who all rated the
-    same five venues satisfy this, because an assignment exists.
-
-    An exclusivity test was the obvious first reading, and it is wrong in a
-    way worth recording. Within one atomic batch there is no ordering, so
-    "the venue X introduced" can only mean "the venue only X rated" -- which
-    means a founder agreeing with another founder's single venue would strip
-    that founder of their claim and refuse the whole founding. Agreement
-    between founders is the last thing this bar should punish.
-
-    Either way the outcome the bar exists for holds: a successful founding
-    covers at least as many distinct venues as it has founders. And either way
-    the check is scoped to this batch, so the association between a founder and
-    the venue credited to them lives only for the length of this call and is
-    never written down.
+    Distinct *venues*, not contributions: rating the same place five times is
+    not knowing five places, and the bar exists to demonstrate a taste rather
+    than to measure typing.
     """
 
 
@@ -102,15 +92,15 @@ class UnscoredFacetError(FoundingError):
 
 @dataclass(frozen=True)
 class FoundingContribution:
-    """One founder's rating, as the caller has already authorised it.
+    """One rating in a founding batch.
 
-    Carries no `community_id`: the community does not exist until founding
-    succeeds. Carries no source or confidence either -- founding is
-    definitionally direct and stated, so the caller does not get to say
-    otherwise.
+    Carries no `user_id`: every contribution in a founding comes from the
+    founder, who is named once on the call rather than repeated on each entry.
+    Carries no `community_id` either -- the community does not exist until
+    founding succeeds -- and no source or confidence, because founding is
+    definitionally direct and stated.
     """
 
-    user_id: UUID
     place_id: str
     # Keyed by *catalogue key*, not facet_id. Facet ids do not exist until
     # founding creates them, so a founding request cannot reference one --
@@ -130,58 +120,10 @@ class FoundingResult:
     """
 
     community: Community
-    # The facets this community was founded with, resolved from the platform
-    # catalogue. Written in the same transaction as everything else: an
-    # aggregate's statistics reference them by foreign key.
     facets: tuple[Facet, ...]
     memberships: tuple[CommunityMembership, ...]
     # Keyed by place_id: one aggregate per venue the batch touched.
     aggregates: dict[str, CommunityAggregate]
-
-
-def _distinct_users(contributions: Sequence[FoundingContribution]) -> set[UUID]:
-    return {contribution.user_id for contribution in contributions}
-
-
-def _credit_one_venue_each(
-    contributions: Sequence[FoundingContribution],
-) -> dict[str, UUID]:
-    """Assign each founder a distinct venue they rated, as far as possible.
-
-    Kuhn's algorithm for maximum bipartite matching -- founders on one side,
-    the venues they rated on the other. Returns the assignment it found, keyed
-    by `place_id`; the caller compares its size against the number of founders
-    to see whether everyone could be credited.
-
-    Iteration order is sorted rather than incidental so the same batch always
-    produces the same assignment, which keeps failures reproducible.
-
-    Recursion depth is bounded by the number of founders. A founding batch is
-    a handful of people by construction, and capping request size belongs to
-    whatever route eventually accepts one, not here.
-    """
-    venues_by_founder: dict[UUID, set[str]] = {}
-    for contribution in contributions:
-        venues_by_founder.setdefault(contribution.user_id, set()).add(
-            contribution.place_id
-        )
-
-    credited: dict[str, UUID] = {}
-
-    def _assign(founder: UUID, tried: set[str]) -> bool:
-        for venue in sorted(venues_by_founder[founder]):
-            if venue in tried:
-                continue
-            tried.add(venue)
-            incumbent = credited.get(venue)
-            if incumbent is None or _assign(incumbent, tried):
-                credited[venue] = founder
-                return True
-        return False
-
-    for founder in sorted(venues_by_founder):
-        _assign(founder, set())
-    return credited
 
 
 def found_community(
@@ -189,6 +131,7 @@ def found_community(
     min_cohort_threshold: int,
     facet_keys: frozenset[str] | set[str],
     catalogue: FacetCatalogue,
+    founder_id: UUID,
     contributions: Sequence[FoundingContribution],
     now: datetime,
 ) -> FoundingResult:
@@ -202,17 +145,15 @@ def found_community(
         facet_keys: which catalogue facets this community rates on. Selected,
             never authored -- see app/domain/facet_catalogue.py.
         catalogue: the platform's facet vocabulary.
-        contributions: the founding batch, already authorised, with
-            `user_id`s the caller has established are distinct people's
-            accounts, scoring facets by catalogue key.
+        founder_id: the account founding the community. Whether it belongs to
+            a distinct real person is OPEN-6, and is not settled here.
+        contributions: the founding batch, scoring facets by catalogue key.
         now: the instant the founding is made at. One value for the whole
             batch, because the batch is one act.
 
     Raises:
         UnsafeThresholdError: the threshold is below the individual floor.
-        InsufficientFoundersError: too few distinct contributors.
-        InsufficientDistinctVenuesError: the founders cannot be credited with
-            one distinct venue each.
+        InsufficientVenuesError: too few distinct venues.
         UnknownFacetKeyError: (from `facet_catalogue`) a selected key is not
             in the catalogue.
         UnscoredFacetError: a contribution scored a facet this community did
@@ -228,19 +169,11 @@ def found_community(
             f"INV-EXPOSE-1."
         )
 
-    distinct_users = _distinct_users(contributions)
-    if len(distinct_users) < FOUNDING_MINIMUM_USERS:
-        raise InsufficientFoundersError(
-            f"Founding needs contributions from at least {FOUNDING_MINIMUM_USERS} "
-            f"distinct people; this batch had {len(distinct_users)}."
-        )
-
-    credited = _credit_one_venue_each(contributions)
-    if len(credited) < len(distinct_users):
-        raise InsufficientDistinctVenuesError(
-            f"{len(distinct_users)} founders can be credited with only "
-            f"{len(credited)} distinct venues between them; founding needs one "
-            f"each."
+    venues = {contribution.place_id for contribution in contributions}
+    if len(venues) < FOUNDING_MINIMUM_VENUES:
+        raise InsufficientVenuesError(
+            f"Founding needs ratings for at least {FOUNDING_MINIMUM_VENUES} "
+            f"distinct venues; this batch covered {len(venues)}."
         )
 
     definitions = catalogue.resolve(facet_keys)
@@ -260,21 +193,12 @@ def found_community(
         created_at=now,
     )
     # SEEDING and LIVE describe scale only -- see the tier note in
-    # docs/03_API_CONTRACT.md. A founding group large enough to clear its own
-    # threshold starts LIVE; a smaller one starts SEEDING and gets there when
-    # joiners arrive.
-    if community.can_go_live(len(distinct_users)):
+    # docs/03_API_CONTRACT.md. A founding is one person now, so a new
+    # community starts SEEDING and reaches LIVE once joiners arrive. The check
+    # is kept rather than assumed away so that a deliberately low threshold
+    # still behaves consistently.
+    if community.can_go_live(current_cohort=1):
         community = community.model_copy(update={"status": CommunityStatus.LIVE})
-
-    memberships = tuple(
-        CommunityMembership(
-            user_id=user_id,
-            community_id=community.community_id,
-            tier=Tier.FOUNDER,
-            joined_at=now,
-        )
-        for user_id in sorted(distinct_users)
-    )
 
     facets = tuple(
         Facet(
@@ -294,6 +218,15 @@ def found_community(
         for definition, facet in zip(definitions, facets, strict=True)
     }
 
+    memberships = (
+        CommunityMembership(
+            user_id=founder_id,
+            community_id=community.community_id,
+            tier=Tier.FOUNDER,
+            joined_at=now,
+        ),
+    )
+
     aggregator = StreamingAggregator()
     aggregates: dict[str, CommunityAggregate] = {}
     for contribution in contributions:
@@ -303,7 +236,7 @@ def found_community(
             last_updated_at=now,
         )
         raw = RawContribution(
-            user_id=contribution.user_id,
+            user_id=founder_id,
             community_id=community.community_id,
             place_id=contribution.place_id,
             facet_scores={

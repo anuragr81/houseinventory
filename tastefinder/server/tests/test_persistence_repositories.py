@@ -106,17 +106,22 @@ CATALOGUE = FacetCatalogue(
 FACET_KEYS = frozenset({"body"})
 
 
+FOUNDER = uuid4()
+
+
 def _founding_batch(count: int = 5) -> list[FoundingContribution]:
     return [
-        FoundingContribution(
-            user_id=uuid4(), place_id=f"place-{index}", facet_scores={"body": 4.0}
-        )
+        FoundingContribution(place_id=f"place-{index}", facet_scores={"body": 4.0})
         for index in range(count)
     ]
 
 
-def _found(batch: list[FoundingContribution], slug: str = "wine") -> FoundingResult:
-    return found_community(slug, 10, FACET_KEYS, CATALOGUE, batch, NOW)
+def _found(
+    batch: list[FoundingContribution],
+    slug: str = "wine",
+    founder_id: UUID = FOUNDER,
+) -> FoundingResult:
+    return found_community(slug, 10, FACET_KEYS, CATALOGUE, founder_id, batch, NOW)
 
 
 def _seed_users(factory: sessionmaker[Session], user_ids: list[UUID]) -> None:
@@ -220,7 +225,7 @@ def test_place_ref_is_created_once_and_holds_no_coordinates(
 
 def test_a_founding_is_persisted_in_full(factory: sessionmaker[Session]) -> None:
     batch = _founding_batch()
-    _seed_users(factory, [c.user_id for c in batch])
+    _seed_users(factory, [FOUNDER])
     result = _found(batch)
 
     with transaction(factory) as session:
@@ -229,7 +234,7 @@ def test_a_founding_is_persisted_in_full(factory: sessionmaker[Session]) -> None
     with transaction(factory) as session:
         assert CommunityRepository(session).get_by_slug("wine") is not None
         memberships = session.scalars(select(CommunityMembershipTable)).all()
-        assert len(memberships) == 5
+        assert len(memberships) == 1
         assert all(m.tier == "FOUNDER" for m in memberships)
 
         aggregates = AggregateRepository(session)
@@ -240,9 +245,10 @@ def test_a_founding_is_persisted_in_full(factory: sessionmaker[Session]) -> None
 
 
 def test_a_duplicate_slug_is_refused(factory: sessionmaker[Session]) -> None:
+    _seed_users(factory, [FOUNDER])  # once: the founder is the same account both times
+
     for attempt in range(2):
         batch = _founding_batch()
-        _seed_users(factory, [c.user_id for c in batch])
         result = _found(batch)
 
         if attempt == 0:
@@ -258,7 +264,7 @@ def test_a_founder_without_an_account_is_refused(
 ) -> None:
     """Founding does not mint accounts."""
     batch = _founding_batch()
-    _seed_users(factory, [c.user_id for c in batch[:4]])  # one missing
+    # The founder's account deliberately not created.
     result = _found(batch)
 
     with pytest.raises(UnknownFounderError), transaction(factory) as session:
@@ -276,7 +282,7 @@ def test_the_facets_a_founding_selected_are_written(
     contribution scoring an unselected facet is refused.
     """
     batch = _founding_batch()
-    _seed_users(factory, [c.user_id for c in batch])
+    _seed_users(factory, [FOUNDER])
     result = _found(batch)
 
     with transaction(factory) as session:
@@ -292,7 +298,7 @@ def test_the_facets_a_founding_selected_are_written(
 def test_a_failed_founding_leaves_no_trace(factory: sessionmaker[Session]) -> None:
     """The atomicity docs/03_API_CONTRACT.md promises, against a real database."""
     batch = _founding_batch()
-    _seed_users(factory, [c.user_id for c in batch[:4]])
+    # The founder's account deliberately not created.
     result = _found(batch)
 
     with pytest.raises(UnknownFounderError), transaction(factory) as session:
@@ -309,7 +315,7 @@ def test_no_aggregate_row_carries_a_user_reference(
 ) -> None:
     """INV-RAW-2, asserted against what actually landed on disk."""
     batch = _founding_batch()
-    _seed_users(factory, [c.user_id for c in batch])
+    _seed_users(factory, [FOUNDER])
     result = _found(batch)
 
     with transaction(factory) as session:

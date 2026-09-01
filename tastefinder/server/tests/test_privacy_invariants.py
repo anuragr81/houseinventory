@@ -777,18 +777,21 @@ def test_INV_SCHEMA_1_facet_names_come_from_the_catalogue_not_the_request() -> N
             ),
         )
     )
+    founder_id = uuid4()
     batch = [
-        FoundingContribution(
-            user_id=uuid4(), place_id=f"place-{i}", facet_scores={"body": 4.0}
-        )
+        FoundingContribution(place_id=f"place-{i}", facet_scores={"body": 4.0})
         for i in range(5)
     ]
 
-    result = found_community("wine", 10, frozenset({"body"}), catalogue, batch, NOW)
+    result = found_community(
+        "wine", 10, frozenset({"body"}), catalogue, founder_id, batch, NOW
+    )
 
     assert [facet.name for facet in result.facets] == ["Body"]
     with pytest.raises(UnknownFacetKeyError):
-        found_community("wine", 10, frozenset({"invented"}), catalogue, batch, NOW)
+        found_community(
+            "wine", 10, frozenset({"invented"}), catalogue, founder_id, batch, NOW
+        )
 
 
 def test_INV_SCHEMA_1_no_founding_input_carries_a_facet_name() -> None:
@@ -868,27 +871,6 @@ def test_INV_AUTH_1_the_identity_link_is_never_joined_to_rating_data() -> None:
     for name in rating_tables & set(Base.metadata.tables):
         foreign = {fk.column.table.name for fk in Base.metadata.tables[name].foreign_keys}
         assert not (foreign & identity_tables)
-
-
-def test_INV_AUTH_2_no_authorisation_seam_accepts_a_contribution() -> None:
-    """The issuance endpoint takes a digest, never facet scores or free text.
-
-    Fails the moment somebody adds a function that both looks like the
-    authorisation-issuance seam and accepts rating data "to compute the hash
-    server-side" -- which would put INV-RAW-2 back in play through a side door.
-    """
-    rating_params = {"facet_scores", "free_text", "contribution", "contributions"}
-    offenders = []
-    for path, node in _all_function_defs():
-        name = node.name.lower()
-        if not ("authorisation" in name or "authorization" in name or "token" in name):
-            continue
-        params = {arg.arg for arg in node.args.args} | {
-            arg.arg for arg in node.args.kwonlyargs
-        }
-        if params & rating_params:
-            offenders.append((path.name, node.name, sorted(params & rating_params)))
-    assert offenders == [], f"Authorisation seam accepts rating data: {offenders}"
 
 
 # ══ The rule this file must keep about itself ═════════════════════════════════

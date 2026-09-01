@@ -5,11 +5,12 @@ FastAPI application factory.
 
 Read-only routes only, per `docs/03_API_CONTRACT.md`: `GET /facets`,
 `GET /communities`, `GET /communities/{slug}`, alongside `/health`.
-`POST /communities` is not wired here -- it needs a way to verify five
-authorisations belong to five distinct users, and authentication is
-deliberately unbuilt (`docs/00_BOOTSTRAP.md`'s exclusion list). See
+`POST /communities` is not wired here. It is now an ordinary authenticated
+request rather than the five-party act it once was, but it still needs a
+session to identify the founder, and authentication is designed
+(`docs/05_AUTH_DESIGN.md`) but unbuilt. See
 `app/services/community_founding.py` for the decision logic that route will
-eventually call.
+call.
 """
 
 from fastapi import FastAPI
