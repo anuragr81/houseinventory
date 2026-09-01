@@ -25,9 +25,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.enums import CommunityStatus, FacetValueType
-from app.domain.models import Community, Facet, User
+from app.domain.facet_catalogue import FacetCatalogue, FacetDefinition
+from app.domain.models import Community, User
 from app.persistence.founding_store import (
-    MissingFacetError,
     SlugAlreadyTakenError,
     UnknownFounderError,
     persist_founding,
@@ -35,12 +35,17 @@ from app.persistence.founding_store import (
 from app.persistence.repositories import (
     AggregateRepository,
     CommunityRepository,
+    FacetRepository,
     PlaceRefRepository,
     UserRepository,
 )
 from app.persistence.session import build_engine, build_session_factory, transaction
 from app.persistence.tables import Base, CommunityMembershipTable, CommunityTable
-from app.services.community_founding import FoundingContribution, found_community
+from app.services.community_founding import (
+    FoundingContribution,
+    FoundingResult,
+    found_community,
+)
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
@@ -58,27 +63,31 @@ def factory(engine: Engine) -> sessionmaker[Session]:
     return build_session_factory(engine)
 
 
-def _facets(community_id: UUID, facet_ids: list[UUID]) -> list[Facet]:
-    return [
-        Facet(
-            facet_id=facet_id,
-            community_id=community_id,
-            name=f"facet-{index}",
+CATALOGUE = FacetCatalogue(
+    definitions=(
+        FacetDefinition(
+            key="body",
+            name="Body",
             value_type=FacetValueType.NUMERIC,
             scale_min=0.0,
             scale_max=10.0,
-        )
-        for index, facet_id in enumerate(facet_ids)
-    ]
+        ),
+    )
+)
+FACET_KEYS = frozenset({"body"})
 
 
-def _founding_batch(facet_id: UUID, count: int = 5) -> list[FoundingContribution]:
+def _founding_batch(count: int = 5) -> list[FoundingContribution]:
     return [
         FoundingContribution(
-            user_id=uuid4(), place_id=f"place-{index}", facet_scores={facet_id: 4.0}
+            user_id=uuid4(), place_id=f"place-{index}", facet_scores={"body": 4.0}
         )
         for index in range(count)
     ]
+
+
+def _found(batch: list[FoundingContribution], slug: str = "wine") -> FoundingResult:
+    return found_community(slug, 10, FACET_KEYS, CATALOGUE, batch, NOW)
 
 
 def _seed_users(factory: sessionmaker[Session], user_ids: list[UUID]) -> None:
@@ -176,15 +185,12 @@ def test_place_ref_is_created_once_and_holds_no_coordinates(
 
 
 def test_a_founding_is_persisted_in_full(factory: sessionmaker[Session]) -> None:
-    facet_id = uuid4()
-    batch = _founding_batch(facet_id)
+    batch = _founding_batch()
     _seed_users(factory, [c.user_id for c in batch])
-    result = found_community("wine", 10, batch, NOW)
+    result = _found(batch)
 
     with transaction(factory) as session:
-        persist_founding(
-            session, result, _facets(result.community.community_id, [facet_id]), NOW
-        )
+        persist_founding(session, result, NOW)
 
     with transaction(factory) as session:
         assert CommunityRepository(session).get_by_slug("wine") is not None
@@ -196,80 +202,67 @@ def test_a_founding_is_persisted_in_full(factory: sessionmaker[Session]) -> None
         stored = aggregates.get(result.community.community_id, "place-0")
         assert stored is not None
         assert stored.cohort_size == 1
-        assert stored.facet_stats[facet_id].mean == pytest.approx(4.0)
+        assert stored.facet_stats[result.facets[0].facet_id].mean == pytest.approx(4.0)
 
 
 def test_a_duplicate_slug_is_refused(factory: sessionmaker[Session]) -> None:
-    facet_id = uuid4()
     for attempt in range(2):
-        batch = _founding_batch(facet_id)
+        batch = _founding_batch()
         _seed_users(factory, [c.user_id for c in batch])
-        result = found_community("wine", 10, batch, NOW)
-        facets = _facets(result.community.community_id, [facet_id])
+        result = _found(batch)
 
         if attempt == 0:
             with transaction(factory) as session:
-                persist_founding(session, result, facets, NOW)
+                persist_founding(session, result, NOW)
         else:
             with pytest.raises(SlugAlreadyTakenError), transaction(factory) as session:
-                persist_founding(session, result, facets, NOW)
+                persist_founding(session, result, NOW)
 
 
 def test_a_founder_without_an_account_is_refused(
     factory: sessionmaker[Session],
 ) -> None:
     """Founding does not mint accounts."""
-    facet_id = uuid4()
-    batch = _founding_batch(facet_id)
+    batch = _founding_batch()
     _seed_users(factory, [c.user_id for c in batch[:4]])  # one missing
-    result = found_community("wine", 10, batch, NOW)
+    result = _found(batch)
 
     with pytest.raises(UnknownFounderError), transaction(factory) as session:
-        persist_founding(
-            session, result, _facets(result.community.community_id, [facet_id]), NOW
-        )
+        persist_founding(session, result, NOW)
 
 
-def test_a_scored_facet_the_community_does_not_define_is_refused(
+def test_the_facets_a_founding_selected_are_written(
     factory: sessionmaker[Session],
 ) -> None:
-    facet_id = uuid4()
-    batch = _founding_batch(facet_id)
-    _seed_users(factory, [c.user_id for c in batch])
-    result = found_community("wine", 10, batch, NOW)
+    """An aggregate cannot reference a facet its own founding did not create.
 
-    with pytest.raises(MissingFacetError), transaction(factory) as session:
-        persist_founding(
-            session,
-            result,
-            _facets(result.community.community_id, [uuid4()]),  # a different facet
-            NOW,
+    The facets come from the FoundingResult rather than being passed in
+    alongside it, so the mismatch this used to guard against is not
+    reachable -- the equivalent check now lives at the service layer, where a
+    contribution scoring an unselected facet is refused.
+    """
+    batch = _founding_batch()
+    _seed_users(factory, [c.user_id for c in batch])
+    result = _found(batch)
+
+    with transaction(factory) as session:
+        persist_founding(session, result, NOW)
+
+    with transaction(factory) as session:
+        stored = FacetRepository(session).ids_for_community(
+            result.community.community_id
         )
-
-
-def test_facets_belonging_to_another_community_are_refused(
-    factory: sessionmaker[Session],
-) -> None:
-    facet_id = uuid4()
-    batch = _founding_batch(facet_id)
-    _seed_users(factory, [c.user_id for c in batch])
-    result = found_community("wine", 10, batch, NOW)
-
-    with pytest.raises(MissingFacetError), transaction(factory) as session:
-        persist_founding(session, result, _facets(uuid4(), [facet_id]), NOW)
+    assert stored == {facet.facet_id for facet in result.facets}
 
 
 def test_a_failed_founding_leaves_no_trace(factory: sessionmaker[Session]) -> None:
     """The atomicity docs/03_API_CONTRACT.md promises, against a real database."""
-    facet_id = uuid4()
-    batch = _founding_batch(facet_id)
+    batch = _founding_batch()
     _seed_users(factory, [c.user_id for c in batch[:4]])
-    result = found_community("wine", 10, batch, NOW)
+    result = _found(batch)
 
     with pytest.raises(UnknownFounderError), transaction(factory) as session:
-        persist_founding(
-            session, result, _facets(result.community.community_id, [facet_id]), NOW
-        )
+        persist_founding(session, result, NOW)
 
     with transaction(factory) as session:
         assert CommunityRepository(session).get_by_slug("wine") is None
@@ -281,15 +274,12 @@ def test_no_aggregate_row_carries_a_user_reference(
     factory: sessionmaker[Session],
 ) -> None:
     """INV-RAW-2, asserted against what actually landed on disk."""
-    facet_id = uuid4()
-    batch = _founding_batch(facet_id)
+    batch = _founding_batch()
     _seed_users(factory, [c.user_id for c in batch])
-    result = found_community("wine", 10, batch, NOW)
+    result = _found(batch)
 
     with transaction(factory) as session:
-        persist_founding(
-            session, result, _facets(result.community.community_id, [facet_id]), NOW
-        )
+        persist_founding(session, result, NOW)
 
     with transaction(factory) as session:
         stored = AggregateRepository(session).get(

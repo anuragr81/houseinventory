@@ -35,7 +35,15 @@ from app.domain.enums import (
     Confidence,
     ConsentScope,
     ContributionSource,
+    FacetValueType,
     ImportJobState,
+)
+from app.domain.facet_catalogue import (
+    SCOREABLE_VALUE_TYPES,
+    FacetCatalogue,
+    FacetCatalogueError,
+    FacetDefinition,
+    UnknownFacetKeyError,
 )
 from app.domain.models import (
     CohortBucketing,
@@ -56,6 +64,7 @@ from app.services.aggregation import (
     StreamingAggregator,
     is_purged,
 )
+from app.services.community_founding import FoundingContribution, found_community
 from app.services.consent import Decision, Operation, RefusalReason
 from app.services.place_cache import coordinates, purge_expired_coordinates
 from app.services.privacy_gate import NoiseConfig, PrivacyGate
@@ -750,6 +759,55 @@ def test_OPEN_3_enabling_noise_with_parameters_still_fails_loudly() -> None:
     )
     with pytest.raises(Exception, match="no noise mechanism is implemented"):
         gate.apply_noise(_aggregate(cohort_size=40))
+
+
+# ══ Group SCHEMA ══════════════════════════════════════════════════════════════
+
+
+def test_INV_SCHEMA_1_facet_names_come_from_the_catalogue_not_the_request() -> None:
+    """A founder selects a facet; they cannot author its name."""
+    catalogue = FacetCatalogue(
+        definitions=(
+            FacetDefinition(
+                key="body",
+                name="Body",
+                value_type=FacetValueType.NUMERIC,
+                scale_min=0.0,
+                scale_max=10.0,
+            ),
+        )
+    )
+    batch = [
+        FoundingContribution(
+            user_id=uuid4(), place_id=f"place-{i}", facet_scores={"body": 4.0}
+        )
+        for i in range(5)
+    ]
+
+    result = found_community("wine", 10, frozenset({"body"}), catalogue, batch, NOW)
+
+    assert [facet.name for facet in result.facets] == ["Body"]
+    with pytest.raises(UnknownFacetKeyError):
+        found_community("wine", 10, frozenset({"invented"}), catalogue, batch, NOW)
+
+
+def test_INV_SCHEMA_1_no_founding_input_carries_a_facet_name() -> None:
+    """Asserted structurally: the request-side type has no name field."""
+    assert "name" not in FoundingContribution.__dataclass_fields__
+    # Scores are keyed by catalogue key, so a request cannot invent a facet.
+    annotation = FoundingContribution.__dataclass_fields__["facet_scores"].type
+    assert "str" in str(annotation)
+
+
+def test_INV_SCHEMA_2_a_text_facet_cannot_be_offered() -> None:
+    """No path from text to a float, and prose must not be persisted."""
+    with pytest.raises(FacetCatalogueError):
+        FacetDefinition(key="notes", name="Notes", value_type=FacetValueType.TEXT)
+
+
+def test_INV_SCHEMA_2_scoreable_types_exclude_text() -> None:
+    assert FacetValueType.TEXT not in SCOREABLE_VALUE_TYPES
+    assert FacetValueType.NUMERIC in SCOREABLE_VALUE_TYPES
 
 
 # ══ The rule this file must keep about itself ═════════════════════════════════

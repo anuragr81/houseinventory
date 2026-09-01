@@ -9,25 +9,20 @@ the surrounding transaction (`session.transaction`), not anything here -- this
 function writes, and the caller's unit of work decides whether the writes
 survive. It deliberately does not commit.
 
-**Facets have to come from somewhere.** `facet_stat` carries a foreign key to
+**Facets are written here too.** `facet_stat` carries a foreign key to
 `facet`, so an aggregate's statistics cannot be stored unless the community's
-facets exist. Facets belong to a community, and the community does not exist
-before founding -- so they cannot pre-exist either. They are therefore passed
-in and written in the same transaction. The API contract's founding request
-body does not currently carry them, which is a real gap in that spec rather
-than something this function invented: per-community facet content is on
-`docs/00_BOOTSTRAP.md`'s out-of-scope list, but *some* facet definitions must
-accompany a founding for its ratings to mean anything. Raised rather than
-guessed at.
+facets exist -- and facets belong to a community that does not exist before
+founding, so they cannot pre-exist either. `found_community` resolves them
+from the platform catalogue and returns them on the result, which is why this
+function has no facet validation of its own: an aggregate cannot reference a
+facet the same founding did not create.
 """
 
-from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domain.models import Facet
 from app.persistence.repositories import (
     AggregateRepository,
     CommunityRepository,
@@ -60,49 +55,24 @@ class UnknownFounderError(FoundingStoreError):
     """
 
 
-class MissingFacetError(FoundingStoreError):
-    """A contribution scored a facet the community does not define."""
-
-
 def persist_founding(
     session: Session,
     result: FoundingResult,
-    facets: Sequence[Facet],
     now: datetime,
 ) -> None:
     """Write a founding. Does not commit -- see the module docstring.
 
     Args:
         session: the unit of work. Roll it back and nothing here survives.
-        result: what `community_founding.found_community` produced.
-        facets: the community's facet definitions, written in the same
-            transaction. Their `community_id` must match the new community.
+        result: what `community_founding.found_community` produced,
+            including the facets it resolved from the catalogue.
         now: used for any `PlaceRef` rows created for venues not yet known.
 
     Raises:
         SlugAlreadyTakenError: the slug is in use.
         UnknownFounderError: a founder has no account.
-        MissingFacetError: a scored facet is not among `facets`.
     """
     community = result.community
-
-    mismatched = [f for f in facets if f.community_id != community.community_id]
-    if mismatched:
-        raise MissingFacetError(
-            f"{len(mismatched)} facet definition(s) belong to a different community."
-        )
-
-    defined_facets = {facet.facet_id for facet in facets}
-    scored_facets = {
-        facet_id
-        for aggregate in result.aggregates.values()
-        for facet_id in aggregate.facet_stats
-    }
-    if not scored_facets <= defined_facets:
-        raise MissingFacetError(
-            f"{len(scored_facets - defined_facets)} scored facet(s) are not defined "
-            f"by this community."
-        )
 
     users = UserRepository(session)
     founder_ids = [membership.user_id for membership in result.memberships]
@@ -122,7 +92,7 @@ def persist_founding(
             f"A community already exists with the slug {community.slug!r}."
         ) from error
 
-    FacetRepository(session).add_all(facets)
+    FacetRepository(session).add_all(result.facets)
     MembershipRepository(session).add_all(result.memberships)
 
     places = PlaceRefRepository(session)

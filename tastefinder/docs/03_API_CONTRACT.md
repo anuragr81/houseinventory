@@ -37,13 +37,23 @@ shape is agreed before implementation. Do not build these during bootstrap.
 
 ```
 POST /communities
-     body: {slug, min_cohort_threshold,
+     body: {slug, min_cohort_threshold, facet_keys: [string],
             foundings: [{authorisation, place_id, facet_scores, free_text?}, ...]}
      → 201 {community_id, slug, status}
      → 409 if the slug is taken.
      → 422 if the founding group does not meet the bar below.
 
+     facet_keys selects from the platform's facet catalogue; a founder cannot
+     author a facet name (INV-SCHEMA-1). facet_scores in each founding entry
+     are keyed by the same catalogue keys, not by facet_id -- facet ids do not
+     exist until founding creates them.
+
      Founding is a single atomic act by a group. See "Founding a community".
+
+GET  /facets
+     → 200 [{key, name, value_type, scale_min, scale_max}]
+     The platform's facet catalogue. A client needs this before it can build a
+     founding request.
 
 GET  /communities
      → 200 [{community_id, slug, status}]
@@ -107,12 +117,29 @@ ordinary path — `RawContribution`, folded by `StreamingAggregator`, purged.
 There is no founder-specific ingestion route, because a second path for
 identified data is exactly what the invariants exist to prevent.
 
-The "each founder introduced a new venue" check runs **in flight**, against the
-batch, before anything is folded. Which founder introduced which venue is never
-written down: the association exists only for the length of the request and
-evaporates with the `RawContribution` objects. Enforcing the rule literally
-therefore costs nothing in retention, which it would not if founders were
-allowed to arrive one at a time.
+The venue-credit check runs **in flight**, against the batch, before anything
+is folded. Which founder was credited with which venue is never written down:
+the assignment exists only for the length of the request and evaporates with
+the `RawContribution` objects. Enforcing the rule therefore costs nothing in
+retention, which it would not if founders were allowed to arrive one at a
+time.
+
+**Facets are selected, not written.** A founding request carries `facet_keys`
+naming entries in the platform's catalogue (`GET /facets`); the community's
+facets are created from those definitions in the same transaction, and the
+contributions in the same request score them by the same keys.
+
+This is a privacy control, not tidiness. A founder-authored facet name would be
+the first thing in this system that is user-written, persisted indefinitely,
+and published — everything else is either transient or numeric. That
+combination is what lets a name carry a third party's personal data, published
+with community ratings attached, about someone who never consented and has no
+erasure path. Selecting from a catalogue removes the possibility instead of
+promising to moderate it. See `INV-SCHEMA-1`.
+
+It does not close the whole hole: `slug` is still founder-supplied, persisted,
+and published. That surface is far smaller and structurally constrained, and it
+is why an operational takedown channel is still needed — recorded as `OPEN-8`.
 
 **Tier is set by how a member arrived, not by the community's status.** The
 five in the founding request receive `FOUNDER`. Everyone who joins afterwards

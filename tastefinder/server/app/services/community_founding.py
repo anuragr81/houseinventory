@@ -36,10 +36,12 @@ from datetime import datetime
 from uuid import UUID
 
 from app.domain.enums import CommunityStatus, Confidence, ContributionSource, Tier
+from app.domain.facet_catalogue import FacetCatalogue
 from app.domain.models import (
     Community,
     CommunityAggregate,
     CommunityMembership,
+    Facet,
     RawContribution,
 )
 from app.services.aggregation import StreamingAggregator
@@ -94,6 +96,10 @@ class UnsafeThresholdError(FoundingError):
     """`min_cohort_threshold` was below the floor a cohort can safely have."""
 
 
+class UnscoredFacetError(FoundingError):
+    """A contribution scored a facet the community did not select."""
+
+
 @dataclass(frozen=True)
 class FoundingContribution:
     """One founder's rating, as the caller has already authorised it.
@@ -106,7 +112,10 @@ class FoundingContribution:
 
     user_id: UUID
     place_id: str
-    facet_scores: dict[UUID, float]
+    # Keyed by *catalogue key*, not facet_id. Facet ids do not exist until
+    # founding creates them, so a founding request cannot reference one --
+    # founding is the moment keys become ids.
+    facet_scores: dict[str, float]
     free_text: str | None = None
 
 
@@ -121,6 +130,10 @@ class FoundingResult:
     """
 
     community: Community
+    # The facets this community was founded with, resolved from the platform
+    # catalogue. Written in the same transaction as everything else: an
+    # aggregate's statistics reference them by foreign key.
+    facets: tuple[Facet, ...]
     memberships: tuple[CommunityMembership, ...]
     # Keyed by place_id: one aggregate per venue the batch touched.
     aggregates: dict[str, CommunityAggregate]
@@ -174,6 +187,8 @@ def _credit_one_venue_each(
 def found_community(
     slug: str,
     min_cohort_threshold: int,
+    facet_keys: frozenset[str] | set[str],
+    catalogue: FacetCatalogue,
     contributions: Sequence[FoundingContribution],
     now: datetime,
 ) -> FoundingResult:
@@ -184,9 +199,12 @@ def found_community(
             constraint, not something this function can see; a caller
             persisting the result handles the collision.
         min_cohort_threshold: per-community, no default (OPEN-1).
+        facet_keys: which catalogue facets this community rates on. Selected,
+            never authored -- see app/domain/facet_catalogue.py.
+        catalogue: the platform's facet vocabulary.
         contributions: the founding batch, already authorised, with
             `user_id`s the caller has established are distinct people's
-            accounts.
+            accounts, scoring facets by catalogue key.
         now: the instant the founding is made at. One value for the whole
             batch, because the batch is one act.
 
@@ -195,6 +213,10 @@ def found_community(
         InsufficientFoundersError: too few distinct contributors.
         InsufficientDistinctVenuesError: the founders cannot be credited with
             one distinct venue each.
+        UnknownFacetKeyError: (from `facet_catalogue`) a selected key is not
+            in the catalogue.
+        UnscoredFacetError: a contribution scored a facet this community did
+            not select.
         InvalidScoreError: (from `aggregation`) a facet score was not finite.
             By then some contributions have been folded and purged; nothing is
             returned, so no community comes into existence.
@@ -221,6 +243,16 @@ def found_community(
             f"each."
         )
 
+    definitions = catalogue.resolve(facet_keys)
+
+    scored_keys = {key for c in contributions for key in c.facet_scores}
+    unselected = scored_keys - {definition.key for definition in definitions}
+    if unselected:
+        raise UnscoredFacetError(
+            f"{len(unselected)} facet(s) were scored that this community does "
+            f"not rate on."
+        )
+
     community = Community(
         slug=slug,
         min_cohort_threshold=min_cohort_threshold,
@@ -244,6 +276,24 @@ def found_community(
         for user_id in sorted(distinct_users)
     )
 
+    facets = tuple(
+        Facet(
+            community_id=community.community_id,
+            name=definition.name,
+            value_type=definition.value_type,
+            scale_min=definition.scale_min,
+            scale_max=definition.scale_max,
+        )
+        for definition in definitions
+    )
+    # The catalogue key a contribution scored, mapped to the facet id that
+    # key just became. This mapping is what makes founding the moment keys
+    # turn into ids.
+    facet_id_by_key = {
+        definition.key: facet.facet_id
+        for definition, facet in zip(definitions, facets, strict=True)
+    }
+
     aggregator = StreamingAggregator()
     aggregates: dict[str, CommunityAggregate] = {}
     for contribution in contributions:
@@ -256,7 +306,10 @@ def found_community(
             user_id=contribution.user_id,
             community_id=community.community_id,
             place_id=contribution.place_id,
-            facet_scores=dict(contribution.facet_scores),
+            facet_scores={
+                facet_id_by_key[key]: score
+                for key, score in contribution.facet_scores.items()
+            },
             free_text=contribution.free_text,
             source=ContributionSource.DIRECT,
             confidence=Confidence.STATED,
@@ -265,5 +318,8 @@ def found_community(
         aggregates[contribution.place_id] = aggregator.fold(raw, aggregate, now)
 
     return FoundingResult(
-        community=community, memberships=memberships, aggregates=aggregates
+        community=community,
+        facets=facets,
+        memberships=memberships,
+        aggregates=aggregates,
     )

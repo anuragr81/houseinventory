@@ -173,6 +173,39 @@ rather than defaulting to allow.
 
 ---
 
+## Group SCHEMA — what users may write that survives a request
+
+Everything else in this document governs data that is either transient
+(`RawContribution`) or numeric (`FacetStat`). This group exists because
+founding introduced the first candidate for something else: text a user writes
+that is persisted indefinitely and published.
+
+### `INV-SCHEMA-1` — Facet names come from the platform, never from a request
+
+A community selects facets from a catalogue the platform owns. No API input
+may set a facet's `name`. A user-authored facet name would be persisted
+indefinitely and published by `GET /communities/{slug}`, which is exactly the
+combination that lets it carry a third party's personal data ("how good is
+<a named person>'s bedside manner") — published with community ratings
+attached, about someone who never consented, with no erasure path and no
+moderation. `CLAUDE.md` already says members rate on a schema *the platform
+owns*; this makes that structural rather than aspirational.
+
+*Test:* assert `found_community` rejects a facet key outside the catalogue;
+assert every persisted facet name is one the catalogue defines.
+
+### `INV-SCHEMA-2` — Only scoreable facet types may be offered
+
+`FacetStat` is a mean/variance/n triple over floats. A `TEXT` facet cannot be
+scored by it, and the only way to make one work would persist per-contribution
+prose — which `INV-RAW-3` forbids. Offering a `TEXT` facet is therefore a
+promise the system cannot keep, and it must be refused where the catalogue is
+built rather than where a contribution arrives.
+
+*Test:* assert constructing a catalogue entry with `value_type = TEXT` raises.
+
+---
+
 ## Open — must be resolved before production
 
 These are **not yet invariants** because the underlying decisions are open. They
@@ -250,6 +283,39 @@ The options, none of them chosen here:
 **This is the project owner's decision.** Whichever way it goes, it should be
 made alongside `OPEN-1` and `OPEN-6`, since all three set the same number from
 different directions.
+
+
+### `OPEN-8` — No moderation or takedown channel
+
+`INV-SCHEMA-1` removes user-authored facet *names*, but `Community.slug` is
+still supplied by a founder, persisted indefinitely, and published by
+`GET /communities`. A slug is structurally constrained and much smaller a
+surface than a free-text facet name, but "someone-is-a-fraud" is a valid slug,
+and nothing in this system can currently remove or rename one.
+
+This is operational rather than implementational — deciding whether a
+particular slug is defamatory needs human review, a reporting route, and a
+takedown policy, none of which are code. It is recorded here for the same
+reason `OPEN-6` is: the direction is known, the mechanism is deferred, and it
+must not be mistaken for handled.
+
+Two things it needs from the implementation side, both cheap now and expensive
+later:
+
+- **A rename/removal path** for slugs and facets. Written-once rows cannot be
+  taken down without a manual intervention against production.
+- **A decision about authorship.** Nothing records which founder supplied a
+  slug, deliberately. That is good for privacy and bad for accountability: my
+  non-expert reading is that an operator's defence under the Defamation Act
+  2013 turns on either identifying the poster or responding properly to a
+  notice, and we currently have neither. Which of those to build is the
+  owner's call, and it wants the solicitor's review `OPEN-5` already asks for.
+
+Unlike `OPEN-6`, whose failure mode is contained within the platform's own
+users, this one involves a third party — a venue owner, a named person — who
+has no relationship with the platform and a direct cause of action. A small
+beta can run with weak Sybil resistance; publishing unremovable user-supplied
+text about real named businesses is a different bet.
 
 
 ---
