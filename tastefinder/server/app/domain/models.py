@@ -54,6 +54,41 @@ class User(BaseModel):
     created_at: datetime
 
 
+class IdentityLink(BaseModel):
+    """`User`'s separate table with its own justification, promised above.
+
+    Maps a Google account back to a `user_id` so a returning user can reach
+    their own pseudonymous account. Holds nothing else -- no email, name,
+    picture, or raw ID token -- and `subject_hash` is never the Google `sub`
+    itself, only `HMAC-SHA256(server_pepper, sub)` (`INV-AUTH-1`,
+    docs/05_AUTH_DESIGN.md). Computing that hash is `services/auth.py`'s job;
+    this model only carries the result.
+    """
+
+    subject_hash: str
+    user_id: UUID
+    created_at: datetime
+
+
+class AuthSession(BaseModel):
+    """A server-issued bearer session (docs/05_AUTH_DESIGN.md).
+
+    `token_hash`, never the bearer token itself: the raw token is returned to
+    the client once, at issuance, and is not the kind of thing this model
+    represents -- the same reasoning `IdentityLink` applies to `sub`, applied
+    to a credential instead of an identifier. Generating and hashing the
+    token is `services/auth.py`'s job; this model only carries the result.
+    """
+
+    token_hash: str
+    user_id: UUID
+    created_at: datetime
+    expires_at: datetime
+
+    def is_active(self, now: datetime) -> bool:
+        return now < self.expires_at
+
+
 class Community(BaseModel):
     community_id: UUID = Field(default_factory=uuid4)
     slug: str

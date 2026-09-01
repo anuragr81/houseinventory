@@ -30,6 +30,34 @@ here.
 - `user_id: UUID` (PK)
 - `created_at: datetime`
 
+### `IdentityLink` (added, Auth Part 1)
+The separate table `User`'s docstring promised. Maps a Google account back to
+a `user_id`, and holds nothing else.
+
+- `subject_hash: str` (PK) — `HMAC-SHA256(server_pepper, google_sub)`, hex.
+  Never the Google `sub` itself (`INV-AUTH-1`).
+- `user_id: UUID` (FK → User)
+- `created_at: datetime`
+
+No email, name, picture, or raw ID token. Computing `subject_hash` is
+`services/auth.py`'s job (`hash_subject`); this table only stores the result.
+See `docs/05_AUTH_DESIGN.md`.
+
+### `AuthSession` (added, Auth Part 1)
+A server-issued bearer session, hashed at rest for the same reason
+`IdentityLink` hashes the Google `sub`: a database leak should not hand out
+usable credentials.
+
+- `token_hash: str` (PK) — SHA-256 of the bearer token, hex.
+- `user_id: UUID` (FK → User)
+- `created_at: datetime`
+- `expires_at: datetime`
+- Behaviour: `is_active(now: datetime) -> bool`
+
+The raw token is generated in `services/auth.py` (`generate_session_token`)
+and returned to the client exactly once, at issuance (`POST /auth/google`).
+It is never persisted, logged, or retrievable again — only its hash is.
+
 ### `CommunityMembership`
 Tier is per-membership, not per-user: someone may found one community and merely
 join another.
@@ -273,6 +301,8 @@ above is an illustration in this document, not a default in the code.
 ## Relationships
 
 ```
+User            1 ──── 0..1 IdentityLink                (Auth Part 1)
+User            1 ──── 0..* AuthSession                  (Auth Part 1)
 User            1 ──── 0..* CommunityMembership *──── 1 Community
 Community       1 ──◆── 0..* Facet                       (composition)
 Community       1 ──── 0..* CommunityAggregate

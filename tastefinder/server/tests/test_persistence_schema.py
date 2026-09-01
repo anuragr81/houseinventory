@@ -77,6 +77,8 @@ def test_community_aggregate_carries_no_user_reference() -> None:
 def test_expected_tables_and_nothing_more() -> None:
     assert set(Base.metadata.tables) == {
         "user",
+        "identity_link",
+        "session_token",
         "community",
         "community_membership",
         "facet",

@@ -36,10 +36,26 @@ shape is agreed before implementation. Do not build these during bootstrap.
 Marked **[implemented]** below are wired up as real FastAPI routes; everything
 else is still specification only, per the bootstrap phasing.
 
+### Authentication
+
+```
+POST /auth/google  [implemented]
+     body: {id_token: string}
+     → 200 {session_token, expires_at}
+     → 401 if the ID token fails verification.
+
+     The client already completed native Google Sign-In and holds an ID
+     token; this exchanges it for a server session (docs/05_AUTH_DESIGN.md,
+     Part 1). Signing in with a Google identity seen before resolves to the
+     same account; a first sign-in mints one. Send the returned
+     session_token as `Authorization: Bearer <session_token>` on every
+     authenticated request below.
+```
+
 ### Communities
 
 ```
-POST /communities
+POST /communities  [implemented]
      body: {slug, min_cohort_threshold, facet_keys: [string],
             contributions: [{place_id, facet_scores, free_text?}, ...]}
      → 201 {community_id, slug, status}

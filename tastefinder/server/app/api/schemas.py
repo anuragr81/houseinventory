@@ -1,8 +1,8 @@
 """
 app/api/schemas.py
 -------------------
-Response shapes for the read-only routes, matching `docs/03_API_CONTRACT.md`
-exactly rather than serialising domain models directly.
+Request and response shapes for the routes, matching `docs/03_API_CONTRACT.md`
+exactly rather than serialising or deserialising domain models directly.
 
 A domain model's shape is free to grow -- `Community` already carries
 `min_cohort_threshold` and `created_at`, which the contract deliberately
@@ -11,6 +11,7 @@ schema is a promise about the wire format; it must not drift with the domain
 model by accident just because they happen to share fields today.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -77,3 +78,42 @@ class AggregateOut(BaseModel):
     place_id: str
     facet_summaries: list[FacetStatOut]
     cohort_size_bucket: str
+
+
+class GoogleSignInIn(BaseModel):
+    """`POST /auth/google` request body: the ID token the client already
+    obtained from native Google Sign-In. Nothing else -- the server reads no
+    other field off the client's OAuth exchange."""
+
+    id_token: str
+
+
+class SessionOut(BaseModel):
+    """`POST /auth/google` response: the bearer token and its expiry.
+
+    The only place the raw session token ever appears -- it is not
+    retrievable again, and the server persists only its hash
+    (`app/services/auth.py`).
+    """
+
+    session_token: str
+    expires_at: datetime
+
+
+class FoundingContributionIn(BaseModel):
+    """One rating in a `POST /communities` founding batch."""
+
+    place_id: str
+    facet_scores: dict[str, float]
+    free_text: str | None = None
+
+
+class FoundCommunityIn(BaseModel):
+    """`POST /communities` request body. `facet_keys` selects from the
+    platform's catalogue (`GET /facets`); a founder cannot author a facet
+    name (`INV-SCHEMA-1`)."""
+
+    slug: str
+    min_cohort_threshold: int
+    facet_keys: list[str]
+    contributions: list[FoundingContributionIn]

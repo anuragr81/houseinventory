@@ -15,6 +15,12 @@ dependencies = [
     "sqlalchemy>=2.0.52",
     "alembic>=1.19.1",
     "uvicorn[standard]>=0.52.4",
+    # Verifying a Google-issued ID token's signature and claims server-side
+    # (docs/05_AUTH_DESIGN.md, Part 1). Not an analytics, crash-reporting, or
+    # tracking SDK -- CLAUDE.md's exclusion list is about those -- this is
+    # cryptographic verification of a token the client already obtained.
+    "google-auth>=2.57.0",
+    "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]

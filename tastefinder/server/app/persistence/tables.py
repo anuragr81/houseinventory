@@ -107,6 +107,41 @@ class UserTable(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class IdentityLinkTable(Base):
+    """Maps a Google account to a `user_id`. See `docs/05_AUTH_DESIGN.md`.
+
+    `subject_hash` is `HMAC-SHA256(pepper, google_sub)`, computed in
+    `services/auth.py` -- never the Google `sub` itself, and no email, name,
+    or picture column either (`INV-AUTH-1`).
+    """
+
+    __tablename__ = "identity_link"
+
+    subject_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("user.user_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class SessionTokenTable(Base):
+    """A server-issued bearer session. See `docs/05_AUTH_DESIGN.md`.
+
+    `token_hash` is a SHA-256 digest of the bearer token the client holds
+    (`services/auth.py`), never the token itself -- a database leak yields
+    digests, not usable credentials.
+    """
+
+    __tablename__ = "session_token"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("user.user_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class CommunityTable(Base):
     __tablename__ = "community"
 

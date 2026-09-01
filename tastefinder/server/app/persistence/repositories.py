@@ -8,11 +8,11 @@ never SQLAlchemy rows. The mapping lives here so that the domain layer stays
 ignorant of the database and the services above it keep working on plain
 objects, as they already do.
 
-Scope is deliberately what founding needs: users, communities, facets,
-memberships, place references, and aggregates. `ConsentRecord` and
-`GoogleImportJob` have no repository yet -- consent is append-only
-(`INV-CONSENT-2`) and that enforcement deserves its own pass rather than
-being tacked onto this one.
+Scope is deliberately what founding and sign-in need: users, identity links,
+sessions, communities, facets, memberships, place references, and
+aggregates. `ConsentRecord` and `GoogleImportJob` have no repository yet --
+consent is append-only (`INV-CONSENT-2`) and that enforcement deserves its
+own pass rather than being tacked onto this one.
 
 Nothing here queries `PlaceRef` by anything but an exact `place_id`, and
 nothing returns a collection of them (`INV-CACHE-3`). Nothing here is indexed
@@ -28,11 +28,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.models import (
+    AuthSession,
     Community,
     CommunityAggregate,
     CommunityMembership,
     Facet,
     FacetStat,
+    IdentityLink,
     PlaceRef,
     User,
 )
@@ -42,7 +44,9 @@ from app.persistence.tables import (
     CommunityTable,
     FacetStatTable,
     FacetTable,
+    IdentityLinkTable,
     PlaceRefTable,
+    SessionTokenTable,
     UserTable,
 )
 
@@ -69,6 +73,57 @@ class UserRepository:
             select(UserTable.user_id).where(UserTable.user_id.in_(user_ids))
         )
         return set(rows)
+
+
+class IdentityLinkRepository:
+    """`INV-AUTH-1`: never joined to rating data, and no lookup here takes
+    anything but the digest -- there is no method that takes a raw `sub`."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, link: IdentityLink) -> None:
+        self._session.add(
+            IdentityLinkTable(
+                subject_hash=link.subject_hash,
+                user_id=link.user_id,
+                created_at=link.created_at,
+            )
+        )
+
+    def get_user_id(self, subject_hash: str) -> UUID | None:
+        row = self._session.get(IdentityLinkTable, subject_hash)
+        return row.user_id if row is not None else None
+
+
+class SessionRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, auth_session: AuthSession) -> None:
+        self._session.add(
+            SessionTokenTable(
+                token_hash=auth_session.token_hash,
+                user_id=auth_session.user_id,
+                created_at=auth_session.created_at,
+                expires_at=auth_session.expires_at,
+            )
+        )
+
+    def user_id_for_token(self, token_hash: str, now: datetime) -> UUID | None:
+        """The session's owner, or `None` if the token is unknown or expired.
+
+        One function whose output is already identical for "no such token"
+        and "token existed, but has expired" -- deliberately, the same
+        reasoning `PrivacyGate.suppress_if_below_threshold` gives for folding
+        absent and suppressed into one return value: a caller that branches
+        on which case it was risks telling them apart in a response, and
+        there is no reason a client needs to.
+        """
+        row = self._session.get(SessionTokenTable, token_hash)
+        if row is None or row.expires_at <= now:
+            return None
+        return row.user_id
 
 
 class CommunityRepository:

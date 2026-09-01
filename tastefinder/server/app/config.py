@@ -53,10 +53,19 @@ class Settings(BaseSettings):
     # Google Places, used as a live lookup service only (docs/01_STACK_DECISIONS.md).
     google_places_api_key: str | None = None
 
-    # Google OAuth. Auth is deliberately not scaffolded yet; these are declared
-    # so the deployment contract is complete, not because anything reads them.
+    # Google OAuth (docs/05_AUTH_DESIGN.md, Part 1). client_id is the audience
+    # POST /auth/google checks a Google ID token's `aud` claim against --
+    # required to verify anything. client_secret stays declared but unread:
+    # verifying an ID token the client already obtained needs no server-side
+    # code exchange, so nothing here calls for it yet.
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
+
+    # HMAC key for identity_link.subject_hash = HMAC-SHA256(pepper, google_sub).
+    # No default: a guessed pepper is worse than none, and unlike the settings
+    # above this one cannot be rotated without orphaning every account, so it
+    # is a permanent secret from day one. See docs/05_AUTH_DESIGN.md.
+    identity_pepper: str | None = None
 
     def require(self, field: str) -> str:
         """Return a setting's value, or raise if it is unset.

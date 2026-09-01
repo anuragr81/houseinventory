@@ -224,11 +224,11 @@ is the emulator's alias for the host machine's localhost), the deployed HTTPS UR
 in release builds. This must be configurable, never a hardcoded literal.
 
 ## Deliberately not chosen yet
-- ~~**Auth provider.**~~ **Now settled — see `docs/05_AUTH_DESIGN.md`.** Google
-  OAuth for sign-in; the server issues its own bearer session token afterwards.
-  The Google `sub` is stored only as an HMAC keyed by a server-held pepper, in
-  a separate `identity_link` table, so `User` stays pseudonymous and a database
-  leak yields no Google account identifiers. Still unbuilt.
+- ~~**Auth provider.**~~ **Settled and built — see `docs/05_AUTH_DESIGN.md`.**
+  Google OAuth for sign-in; the server issues its own bearer session token
+  afterwards. The Google `sub` is stored only as an HMAC keyed by a
+  server-held pepper, in a separate `identity_link` table, so `User` stays
+  pseudonymous and a database leak yields no Google account identifiers.
 - **Privacy mechanism.** Threshold suppression vs. differential privacy is open.
   The `PrivacyGate` interface exists; the mechanism behind it does not. Do not
   pick parameters to make something runnable.

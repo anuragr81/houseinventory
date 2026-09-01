@@ -15,20 +15,26 @@ What exists, roughly newest first:
 | Area | State |
 |---|---|
 | `GET /health`, `/facets`, `/communities`, `/communities/{slug}` | Built, tested, live |
-| `POST /communities` (founding) | Decision logic built and tested; **no route** — needs a session |
-| Authentication | **Designed** (`docs/05_AUTH_DESIGN.md`), not built. This is the next blocker |
+| `GET /communities/{slug}/places/{place_id}/aggregate` | Built, tested, live -- first route through `PrivacyGate` |
+| Authentication (`POST /auth/google`, Part 1 of `docs/05_AUTH_DESIGN.md`) | **Built**: Google ID-token verification, `identity_link`, server-issued bearer sessions |
+| `POST /communities` (founding) | **Built**: wired to `get_current_user_id`; decision logic and atomic write both tested |
 | Persistence layer | Built: repositories, transactions, atomic founding write |
 | Domain model, aggregation, privacy gate | Built and tested |
 | Facet catalogue | Built; **no content** — the platform's actual facet list is unset |
+| Cohort bucketing | Built; **no boundaries configured** — `COHORT_BUCKETING_BOUNDARIES` is the owner's to set |
 | Flutter client | Scaffolded, builds for Android/Linux/web, calls `/health` |
 | Databases | SQLite locally and in tests; **MySQL** deployed. Suite runs against both |
 | Google Places, Google import, Sybil resistance, moderation | Not started, deliberately |
 
-**The single most useful thing to know:** the next thing standing between this
-project and a writable API is implementing Part 1 of `docs/05_AUTH_DESIGN.md`
-(Google OAuth plus server-issued sessions). `POST /communities` needs nothing
-else — its decision logic is already written and tested in
-`app/services/community_founding.py`.
+**The single most useful thing to know:** the writable API is unblocked now.
+A client can sign in with Google, get a bearer session, and found a
+community, end to end. What is missing is product content the owner
+supplies, not more code: the facet catalogue is empty
+(`FACET_CATALOGUE_PATH`), cohort bucket boundaries are unset
+(`COHORT_BUCKETING_BOUNDARIES`), and `min_cohort_threshold` per community has
+no safe default (`OPEN-1`). `GET /communities/{slug}/aggregates?bbox=...`
+(the list variant) is the one documented route still unbuilt; it needs a new
+`AggregateRepository` method the single-aggregate route does not.
 
 ## What this project is, in one paragraph
 
@@ -62,22 +68,31 @@ reference its section numbers where the reasoning matters.
 
 ## Where to pick up
 
-There is no single prescribed next task any more — the phased plan is done.
-The candidates, in the order they unblock the most:
+There is no single prescribed next task any more — the phased plan is done,
+and so is the authentication work that used to head this list (Part 1 of
+`docs/05_AUTH_DESIGN.md`, plus wiring `POST /communities` to it). The
+candidates now:
 
-1. **Implement `docs/05_AUTH_DESIGN.md` Part 1** — Google OAuth, an
-   `identity_link` table storing only an HMAC of the Google `sub`, and
-   server-issued bearer sessions. Everything else on this list is waiting
-   behind it.
-2. **Wire `POST /communities`** — the decision logic and the atomic write both
-   exist (`community_founding.py`, `founding_store.py`). It needs a session to
-   identify the founder, and nothing else.
-3. **Decide the facet catalogue's contents** — the mechanism is built and
-   `GET /facets` serves it, but no facets are defined. This is product content,
-   not an implementation task, and it is the owner's to supply.
-4. **Resolve an `OPEN-` item.** `OPEN-1` (cohort threshold) and `OPEN-7`
+1. **Set the product-content values nothing has a safe default for.** The
+   facet catalogue (`FACET_CATALOGUE_PATH`) is empty, cohort bucket
+   boundaries (`COHORT_BUCKETING_BOUNDARIES`) are unset, and
+   `min_cohort_threshold` has no default per community (`OPEN-1`). None of
+   these are implementation tasks — each is deliberately un-guessable, and
+   each is the owner's to supply.
+2. **Resolve an `OPEN-` item.** `OPEN-1` (cohort threshold) and `OPEN-7`
    (`cohort_size` counts contributions, not contributors) are the two that
-   most constrain what can safely be published.
+   most constrain what can safely be published. `OPEN-6` (Sybil resistance)
+   now matters more than it did: a valid session proves an account, not a
+   person, and solo founding means nothing else in the platform structurally
+   requires more than one.
+3. **Build `GET /communities/{slug}/aggregates?bbox=...`**, the list variant
+   of the aggregate route. It needs a new `AggregateRepository` method the
+   single-aggregate route (`GET /communities/{slug}/places/{place_id}/aggregate`)
+   does not.
+4. **Wire `POST /communities/{slug}/membership`** (join a community) and
+   `POST /communities/{slug}/contributions` (rate a venue) — both specified
+   in `docs/03_API_CONTRACT.md`, neither built. `get_current_user_id`
+   (`app/api/deps.py`) is ready for either to use.
 
 ## What success looks like
 
@@ -98,8 +113,6 @@ specification pass first:
 - Google Places integration (venue lookup)
 - Google Data Portability import (the founder seeding flow)
 - The normalisation adapter
-- ~~Authentication~~ — now *designed* in `docs/05_AUTH_DESIGN.md` and ready to
-  build. Still unbuilt, so nothing may assume a session exists yet.
 - Per-community facet content (the mechanism yes, the actual wine/cricket facet
   sets no)
 - Any business-facing aggregate query API

@@ -1,10 +1,12 @@
 # 05 — Authentication
 
-Specification, not implementation. Nothing here is built yet.
-
 `docs/01_STACK_DECISIONS.md` deferred this ("Sign-in will involve Google OAuth,
 but session handling and account model are not settled"). Part 1 below settles
-it.
+it, and **Part 1 is now built**: `POST /auth/google` (`app/api/auth.py`),
+`identity_link` and `session_token` (`app/persistence/tables.py`), and
+`get_current_user_id` (`app/api/deps.py`), which is what `POST /communities`
+uses to identify the founder. See `docs/03_API_CONTRACT.md`'s
+"Authentication" section for the wire contract.
 
 > **Part 2 of this document has been removed.** It specified a
 > joint-authorisation mechanism — a `POST /founding-authorisations` endpoint,
